@@ -25,7 +25,7 @@ jobs:
       - name: Apply and publish without a force push
         run: |
           set -euo pipefail
-          git fetch origin feature/switch2kit-easy-setup
+          git fetch --depth=1 origin feature/switch2kit-easy-setup
           git checkout -B feature/switch2kit-easy-setup FETCH_HEAD
           test "$(git rev-parse HEAD)" = cd2209c3adb8f387c1f6fc9258017765c5ad8ed9
           python3 - <<'PY'
@@ -53,6 +53,9 @@ jobs:
           git update-index --cacheinfo 160000,8088ce3ef6845fe90d8ff7a579e6498668bd65de,Externals/Switch2Kit
           python3 Tools/test_switch2kit.py
           python3 Tools/test_switch2kit_mapping.py --sanitize
+          # The Actions token cannot change workflows. Publish that one file
+          # separately through the authorized GitHub connector, not this token.
+          git restore --source=HEAD --staged --worktree .github/workflows/native-switch2kit.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'Add per-port Switch 2 controller setup and recommended mappings with rumble' -m 'Select GameCube/Pro controllers beside each port; protect custom mappings with confirmation and backups. Include both presets, production-helper regression tests and the companion motor library. AI-assisted host UI/input changes; physical rumble acceptance remains separate.'
