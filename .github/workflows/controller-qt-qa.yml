@@ -15,10 +15,16 @@ jobs:
           ref: 7da781f77600f7e24790f96f40954ca336b8779d
           submodules: recursive
           persist-credentials: false
+      - name: Retain exact source before any formatting
+        run: |
+          git archive HEAD -o qt-source.zip
+          git rev-parse HEAD > qt-source-revision.txt
       - name: Install real Qt headers and native build tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends qt6-base-dev qt6-base-private-dev qt6-svg-dev libgl-dev libudev-dev libevdev-dev libasound2-dev libpulse-dev libxrandr-dev libxi-dev libusb-1.0-0-dev nasm automake libtool ninja-build clang-format-18
+          sudo apt-get install -y --no-install-recommends qt6-base-dev qt6-base-private-dev qt6-svg-dev libgl-dev libudev-dev libevdev-dev libasound2-dev libpulse-dev libxrandr-dev libxi-dev libusb-1.0-0-dev nasm automake libtool ninja-build
+          python3 -m venv "$RUNNER_TEMP/formatter"
+          "$RUNNER_TEMP/formatter/bin/pip" install 'clang-format==21.1.8'
       - name: Configure ordinary Linux dependencies without the macOS backend
         run: |
           set -o pipefail
@@ -33,7 +39,7 @@ jobs:
           import json, shlex, subprocess
           from pathlib import Path
           commands = json.loads(Path('build-qt/compile_commands.json').read_text())
-          suffixes = ['Config/GamecubeControllersWidget.cpp', 'Config/Mapping/MappingWindow.cpp']
+          suffixes = ['Config/GamecubeControllersWidget.cpp', 'Config/Mapping/MappingWindow.cpp', 'Config/ControllersPane.cpp']
           helper = 'Source/Core/DolphinQt/Config/Mapping/Switch2KitMapping.cpp'
           results = []
           for suffix in suffixes + [helper]:
@@ -51,15 +57,12 @@ jobs:
           Path('qt-syntax-results.json').write_text(json.dumps(results, indent=2))
           PY
       - name: Retain scoped formatting diff without changing the feature branch
-        if: always()
         run: |
-          # Ubuntu's formatter predates the c++23 spelling. Use its Latest
-          # parser mode with the same repository rules in a temporary file.
-          # Do not modify the repository's language or formatter settings.
-          sed 's/^Standard: c++23$/Standard: Latest/' Source/.clang-format > "$RUNNER_TEMP/controller-clang-format"
+          "$RUNNER_TEMP/formatter/bin/clang-format" --version
           for f in Source/Core/DolphinQt/Config/{GamecubeControllersWidget.cpp,GamecubeControllersWidget.h,ControllersPane.cpp} Source/Core/DolphinQt/Config/Mapping/{MappingWindow.cpp,MappingWindow.h,Switch2KitMapping.cpp,Switch2KitMapping.h,Switch2KitMappingPolicy.h}; do
-            clang-format-18 --style="file:$RUNNER_TEMP/controller-clang-format" -i "$f"
+            "$RUNNER_TEMP/formatter/bin/clang-format" -i "$f"
           done
+          git diff --check
           git diff -- Source/Core/DolphinQt > controller-format.patch
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
@@ -69,4 +72,6 @@ jobs:
             controller-format.patch
             qt-configure.log
             qt-syntax-results.json
+            qt-source.zip
+            qt-source-revision.txt
           retention-days: 7
