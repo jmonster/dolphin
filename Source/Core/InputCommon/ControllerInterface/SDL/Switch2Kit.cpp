@@ -24,6 +24,7 @@ std::mutex s_settings_mutex;
 std::unique_ptr<Switch2Kit::SDL3Adapter> s_adapter;
 S2KContext* s_context = nullptr;
 bool s_available = false;
+bool s_started = false;
 S2KResult s_error = S2K_OK;
 
 // SDL callbacks run with this lock held. Always take it before our own mutex.
@@ -67,7 +68,10 @@ int FindSwitch2Controllers()
     return s_error;
   s_error = s2k_start(s_context);
   if (s_error == S2K_OK)
+  {
+    s_started = true;
     s_error = s2k_discover(s_context, 60.0);
+  }
   return s_error;
 }
 
@@ -75,7 +79,7 @@ void UpdateSwitch2Kit()
 {
   const JoystickLock joystick_lock;
   const std::lock_guard lock(s_mutex);
-  if (!s_available || !s_context)
+  if (!s_available || !s_context || !s_started)
     return;
   if (!s_adapter)
     s_adapter = std::make_unique<Switch2Kit::SDL3Adapter>(s_context);
@@ -88,6 +92,9 @@ void StopSwitch2Controllers()
 {
   const JoystickLock joystick_lock;
   const std::lock_guard lock(s_mutex);
+  // Keep subsequent input polls from recreating the adapter while stopped or
+  // while asynchronous Bluetooth teardown is still completing. Only Find starts it.
+  s_started = false;
   s_adapter.reset();
   if (s_context)
     s_error = s2k_stop(s_context);
@@ -99,6 +106,7 @@ void ShutdownSwitch2Kit()
   const JoystickLock joystick_lock;
   const std::lock_guard lock(s_mutex);
   s_available = false;
+  s_started = false;
   // Destroy SDL devices before their borrowed C context and before SDL_Quit.
   s_adapter.reset();
   if (s_context)

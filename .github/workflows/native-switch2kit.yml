@@ -15,6 +15,33 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 Tools/test_switch2kit.py
+      - name: Execute host lifecycle and identity regressions with sanitizers
+        run: python3 Tools/test_switch2kit_host.py --sanitize
+  sdk-regressions:
+    if: github.repository == 'jmonster/dolphin'
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Initialize exactly the pinned SDK and Dolphin SDL
+        run: git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
+      - name: Exercise the real SDK and in-process SDL adapter without hardware
+        run: |
+          set -o pipefail
+          swift test --package-path Externals/Switch2Kit 2>&1 | tee switch2kit-sdk-tests.log
+          S2K_SDL_SOURCE="$PWD/Externals/SDL/SDL" \
+            bash Externals/Switch2Kit/tests/sdl-inprocess/verify.sh \
+            2>&1 | tee switch2kit-sdl-tests.log
+      - name: SDK test diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Switch2Kit-sdk-regressions
+          path: switch2kit-*-tests.log
   macos:
     if: github.repository == 'jmonster/dolphin'
     strategy:
@@ -40,6 +67,7 @@ jobs:
         run: |
           test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = 00c383f4773b5e712c8f673c33791b810297ed2c
           python3 Tools/test_switch2kit.py
+          python3 Tools/test_switch2kit_host.py --sanitize
       - name: Build the complete application
         env:
           ARCH: ${{ matrix.arch }}
@@ -67,11 +95,19 @@ jobs:
           lipo "$app/Contents/Frameworks/libSwitch2KitC.dylib" -verify_arch "$ARCH"
           test -f "$app/Contents/Resources/Sys/Profiles/GCPad/Switch2Kit GameCube.ini"
           ditto -c -k --keepParent "$app" "Dolphin-Switch2Kit-$ARCH.zip"
+      - name: Launch, normally quit and relaunch the exact ZIP with build roots denied
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          python3 Tools/test_switch2kit_bundle.py "Dolphin-Switch2Kit-$ARCH.zip" \
+            --architecture "$ARCH" --report switch2kit-validation.json
       - name: Application artifact (not hardware-qualified or notarized)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-${{ matrix.arch }}
-          path: Dolphin-Switch2Kit-${{ matrix.arch }}.zip
+          path: |
+            Dolphin-Switch2Kit-${{ matrix.arch }}.zip
+            switch2kit-validation.json
           if-no-files-found: error
       - name: Build diagnostics
         if: always()
@@ -80,5 +116,7 @@ jobs:
           name: Switch2Kit-${{ matrix.arch }}-diagnostics
           path: |
             switch2kit-*.log
+            switch2kit-*.sample
+            switch2kit-validation.json
             build-switch2kit/CMakeCache.txt
             build-switch2kit/CMakeFiles/CMakeConfigureLog.yaml
