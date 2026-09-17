@@ -1,0 +1,49 @@
+name: Switch2Kit desktop artifact verification
+on:
+  push:
+    branches: [qa/pr1-81d50c5-desktop-launch]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: switch2kit-desktop-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  desktop:
+    if: github.repository == 'jmonster/dolphin'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /Tools/test_switch2kit_desktop.py
+            /Tools/switch2kit/DesktopProbe.swift
+      - name: Verify normal desktop launch of the exact qualified PR artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          python3 Tools/test_switch2kit_desktop.py 2>&1 | tee switch2kit-desktop.log
+      - name: Desktop acceptance diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Switch2Kit-desktop-${{ matrix.arch }}
+          path: |
+            switch2kit-desktop-validation.json
+            switch2kit-desktop.log
