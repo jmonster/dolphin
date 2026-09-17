@@ -1,0 +1,28 @@
+name: Switch2Kit polish QA
+on:
+  push:
+    branches: [qa/switch2kit-polish]
+permissions:
+  contents: read
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd2209c3adb8f387c1f6fc9258017765c5ad8ed9
+          persist-credentials: false
+      - name: Archive pinned sources for local reproduction
+        run: |
+          git archive HEAD -o "$RUNNER_TEMP/dolphin-source.zip"
+          git submodule update --init Externals/SDL/SDL
+          git -C Externals/SDL/SDL archive HEAD -o "$RUNNER_TEMP/sdl-source.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: controller-polish-sources
+          path: |
+            ${{ runner.temp }}/dolphin-source.zip
+            ${{ runner.temp }}/sdl-source.zip
+          retention-days: 7
+          if-no-files-found: error
