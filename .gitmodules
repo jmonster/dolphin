@@ -134,3 +134,7 @@
 	path = Externals/wil
 	url = https://github.com/microsoft/wil.git
 	shallow = true
+[submodule "Externals/Switch2Kit"]
+	path = Externals/Switch2Kit
+	url = https://github.com/jmonster/Switch2Kit.git
+	shallow = true

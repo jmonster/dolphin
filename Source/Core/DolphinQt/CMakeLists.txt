@@ -717,6 +717,11 @@ if(APPLE)
     endif()
   endif()
 
+  if(ENABLE_SWITCH2KIT)
+    set(SWITCH2KIT_BLUETOOTH_USAGE "<key>NSBluetoothAlwaysUsageDescription</key><string>Dolphin uses Bluetooth to connect to the controllers you select.</string>")
+    switch2kit_embed(dolphin-emu)
+  endif()
+
   if(POSTPROCESS_BUNDLE)
     # Update library references to make the bundle portable
     include(DolphinPostprocessBundle)

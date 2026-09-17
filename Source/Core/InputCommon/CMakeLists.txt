@@ -197,3 +197,5 @@ if(TARGET Hidapi::Hidapi)
   target_link_libraries(inputcommon PUBLIC Hidapi::Hidapi)
   target_compile_definitions(inputcommon PRIVATE -DHAVE_HIDAPI=1)
 endif()
+
+include(DolphinSwitch2Kit)
