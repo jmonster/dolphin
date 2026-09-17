@@ -48,7 +48,8 @@ void ControllersPane::CreateMainLayout()
   auto* const help = new QLabel(
       tr("Hold Sync to pair, then choose your GameCube or Pro controller next to a port above. "
          "Recommended controls and rumble are applied for you. Configure is only needed for "
-         "custom mappings. No separate controller app is needed."), this);
+         "custom mappings. No separate controller app is needed."),
+      this);
   help->setWordWrap(true);
   layout->addWidget(help);
   connect(find, &QPushButton::clicked, this, [this] {
@@ -57,7 +58,8 @@ void ControllersPane::CreateMainLayout()
       QMessageBox::warning(this, tr("Switch 2 Controllers"),
                            tr("Controller discovery could not start (error %1). Check Bluetooth "
                               "permission and close other controller apps. If disconnecting, "
-                              "wait for it to finish before trying again.").arg(result));
+                              "wait for it to finish before trying again.")
+                               .arg(result));
   });
   connect(stop, &QPushButton::clicked, this, [] { ciface::SDL::StopSwitch2Controllers(); });
   const auto update_status = [status, find, stop] {
@@ -79,8 +81,8 @@ void ControllersPane::CreateMainLayout()
     else if (state.error != 0)
       status->setText(tr("Controller input error %1. Try discovery again.").arg(state.error));
     else if (state.scanning)
-      status->setText(tr("Searching for 60 seconds: hold Sync. Connected: %1.")
-                          .arg(state.controllers));
+      status->setText(
+          tr("Searching for 60 seconds: hold Sync. Connected: %1.").arg(state.controllers));
     else
       status->setText(tr("Connected Switch 2 controllers: %1. Use Find to add another.")
                           .arg(state.controllers));

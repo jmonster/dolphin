@@ -106,8 +106,9 @@ void GamecubeControllersWidget::CreateLayout()
 #ifdef HAVE_SWITCH2KIT
     auto* const devices = m_switch2kit_devices[i] = new QComboBox(this);
     devices->setAccessibleName(tr("Physical controller for Port %1").arg(i + 1));
-    devices->setToolTip(tr("Choose a connected Switch 2 controller to apply its recommended mapping. "
-                          "Use Configure for custom mappings or other controllers."));
+    devices->setToolTip(
+        tr("Choose a connected Switch 2 controller to apply its recommended mapping. "
+           "Use Configure for custom mappings or other controllers."));
     devices->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     devices->setMinimumContentsLength(18);
     m_gc_layout->addWidget(devices, controller_row, 2);
@@ -194,8 +195,7 @@ void GamecubeControllersWidget::OnGCPadConfigure(size_t index)
   window->setAttribute(Qt::WA_DeleteOnClose, true);
   window->setWindowModality(Qt::WindowModality::WindowModal);
 #ifdef HAVE_SWITCH2KIT
-  connect(window, &QDialog::finished, this,
-          [this] { RefreshSwitch2KitDevices(); });
+  connect(window, &QDialog::finished, this, [this] { RefreshSwitch2KitDevices(); });
 #endif
   window->show();
 }
@@ -257,8 +257,8 @@ void GamecubeControllersWidget::RefreshSwitch2KitDevices()
       {
         ciface::Core::DeviceQualifier qualifier;
         qualifier.FromString(device);
-        const auto label = profile == "Switch2Kit GameCube" ? tr("GameCube (%1)") :
-                                                              tr("Pro Controller (%1)");
+        const auto label =
+            profile == "Switch2Kit GameCube" ? tr("GameCube (%1)") : tr("Pro Controller (%1)");
         box->addItem(label.arg(qualifier.cid + 1), QString::fromStdString(device));
         box->setItemData(box->count() - 1, QString::fromStdString(device), Qt::ToolTipRole);
       }
@@ -301,8 +301,9 @@ void GamecubeControllersWidget::OnSwitch2KitDeviceSelected(size_t index)
     const auto lock = ControllerEmu::EmulatedController::GetStateLock();
     for (size_t i = 0; i < m_switch2kit_devices.size(); ++i)
     {
-      if (i != index && Config::Get(Config::GetInfoForSIDevice(static_cast<int>(i))) ==
-                            SerialInterface::SIDEVICE_GC_CONTROLLER &&
+      if (i != index &&
+          Config::Get(Config::GetInfoForSIDevice(static_cast<int>(i))) ==
+              SerialInterface::SIDEVICE_GC_CONTROLLER &&
           config->GetController(static_cast<int>(i))->GetDefaultDevice().ToString() == device)
         already_assigned = true;
     }
@@ -313,8 +314,8 @@ void GamecubeControllersWidget::OnSwitch2KitDeviceSelected(size_t index)
                                 "Set that port to None first, or choose another controller."));
   else if (Switch2KitMapping::Apply(this, static_cast<int>(index), device))
   {
-    SignalBlocking(m_gc_controller_boxes[index])->setCurrentIndex(
-        *ToGCMenuIndex(SerialInterface::SIDEVICE_GC_CONTROLLER));
+    SignalBlocking(m_gc_controller_boxes[index])
+        ->setCurrentIndex(*ToGCMenuIndex(SerialInterface::SIDEVICE_GC_CONTROLLER));
     OnGCTypeChanged(index);
     SaveSettings();
   }

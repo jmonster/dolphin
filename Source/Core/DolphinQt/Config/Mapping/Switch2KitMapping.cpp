@@ -12,8 +12,8 @@
 #include "Common/IniFile.h"
 #include "Core/HW/GCPad.h"
 #include "Core/HW/GCPadEmu.h"
-#include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/Config/Mapping/Switch2KitMappingPolicy.h"
+#include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "InputCommon/InputConfig.h"
 
 namespace Switch2KitMapping
@@ -101,10 +101,12 @@ bool Apply(QWidget* parent, int port, const std::string& device)
   auto* controller = config->GetController(port);
   const auto before = Snapshot(controller);
   const bool customized = !IsKnownMapping(before, port, config);
-  if (customized && ModalMessageBox::question(
+  if (customized &&
+      ModalMessageBox::question(
           parent, Tr("Replace Controller Mapping?"),
           Tr("Replace your custom mapping for Port %1? A backup will be saved in controller "
-             "profiles, where it can be restored with Load.").arg(port + 1),
+             "profiles, where it can be restored with Load.")
+              .arg(port + 1),
           QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
   {
     return false;

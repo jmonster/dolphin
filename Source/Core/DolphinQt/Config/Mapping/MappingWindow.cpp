@@ -212,8 +212,9 @@ void MappingWindow::CreateMainLayout()
   m_main_layout->addLayout(m_config_layout);
 #ifdef HAVE_SWITCH2KIT
   m_switch2kit_recommended = new NonDefaultQPushButton(tr("Use Recommended Mapping"), this);
-  m_switch2kit_recommended->setToolTip(tr("Apply the selected Switch 2 controller's buttons, "
-                                       "sticks, triggers and rumble. Custom mappings are backed up."));
+  m_switch2kit_recommended->setToolTip(
+      tr("Apply the selected Switch 2 controller's buttons, "
+         "sticks, triggers and rumble. Custom mappings are backed up."));
   m_switch2kit_recommended->setVisible(false);
   m_main_layout->addWidget(m_switch2kit_recommended);
   connect(m_switch2kit_recommended, &QPushButton::clicked, this, [this] {
