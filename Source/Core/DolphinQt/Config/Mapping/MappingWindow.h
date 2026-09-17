@@ -98,6 +98,10 @@ private:
   void OnSelectDevice(int index);
 
   ControllerEmu::EmulatedController* m_controller = nullptr;
+#ifdef HAVE_SWITCH2KIT
+  bool m_switch2kit_gamecube = false;
+  QPushButton* m_switch2kit_recommended = nullptr;
+#endif
 
   // Main
   QVBoxLayout* m_main_layout;
