@@ -63,8 +63,8 @@ jobs:
           test -d "$app"
           test -f "$app/Contents/Frameworks/libSwitch2KitC.dylib"
           /usr/libexec/PlistBuddy -c 'Print :NSBluetoothAlwaysUsageDescription' "$app/Contents/Info.plist"
-          lipo -verify_arch "$ARCH" "$app/Contents/MacOS/DolphinQt"
-          lipo -verify_arch "$ARCH" "$app/Contents/Frameworks/libSwitch2KitC.dylib"
+          lipo "$app/Contents/MacOS/DolphinQt" -verify_arch "$ARCH"
+          lipo "$app/Contents/Frameworks/libSwitch2KitC.dylib" -verify_arch "$ARCH"
           test -f "$app/Contents/Resources/Sys/Profiles/GCPad/Switch2Kit GameCube.ini"
           ditto -c -k --keepParent "$app" "Dolphin-Switch2Kit-$ARCH.zip"
       - name: Application artifact (not hardware-qualified or notarized)
