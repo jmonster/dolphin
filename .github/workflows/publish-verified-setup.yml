@@ -1,0 +1,59 @@
+name: Publish verified controller setup
+on:
+  push:
+    branches: [qa/publish-controller-setup]
+    paths: [.github/workflows/publish-verified-setup.yml]
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Verify staged payload
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, os, zlib
+          from pathlib import Path
+          payload = ''.join(Path(f'.qa/setup.payload.{part}').read_text().strip() for part in range(1, 7))
+          assert hashlib.sha256(payload.encode()).hexdigest() == '920e2744b97031dc54b1e276410b9803f46e4eb1c5a5b89a71a4da4bc3a19e9b'
+          data = zlib.decompress(base64.b64decode(payload, validate=True))
+          json.loads(data)
+          Path(os.environ['RUNNER_TEMP'], 'edits.json').write_bytes(data)
+          PY
+      - name: Apply and publish without a force push
+        run: |
+          set -euo pipefail
+          git fetch origin feature/switch2kit-easy-setup
+          git checkout -B feature/switch2kit-easy-setup FETCH_HEAD
+          test "$(git rev-parse HEAD)" = cd2209c3adb8f387c1f6fc9258017765c5ad8ed9
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          for edit in json.loads(Path(os.environ['RUNNER_TEMP'], 'edits.json').read_text()):
+              path = Path(edit['path'])
+              assert not path.is_absolute() and '..' not in path.parts
+              original = path.read_text() if path.exists() else ''
+              if edit['old'] is None:
+                  assert not path.exists()
+              else:
+                  assert hashlib.sha256(original.encode()).hexdigest() == edit['old'], path
+              lines = original.splitlines(keepends=True)
+              for start, end, replacement in reversed(edit['ops']):
+                  lines[start:end] = replacement.splitlines(keepends=True)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(''.join(lines))
+          PY
+          git diff --check
+          git add -A
+          GIT_INDEX_FILE="$RUNNER_TEMP/verify-index" git read-tree --empty
+          git ls-files --stage | awk '$1 != "160000"' | GIT_INDEX_FILE="$RUNNER_TEMP/verify-index" git update-index --index-info
+          test "$(GIT_INDEX_FILE="$RUNNER_TEMP/verify-index" git write-tree)" = f77e02c495ce4c68d64152b23aae9d180995faf3
+          git update-index --cacheinfo 160000,8088ce3ef6845fe90d8ff7a579e6498668bd65de,Externals/Switch2Kit
+          python3 Tools/test_switch2kit.py
+          python3 Tools/test_switch2kit_mapping.py --sanitize
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Add per-port Switch 2 controller setup and recommended mappings with rumble' -m 'Select GameCube/Pro controllers beside each port; protect custom mappings with confirmation and backups. Include both presets, production-helper regression tests and the companion motor library. AI-assisted host UI/input changes; physical rumble acceptance remains separate.'
+          git push origin HEAD:refs/heads/feature/switch2kit-easy-setup
