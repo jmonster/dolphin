@@ -22,10 +22,10 @@ class Switch2KitIntegrationTests(unittest.TestCase):
         self.assertEqual(profile["Buttons/Z"], "`Shoulder R`")
         self.assertEqual(profile["Buttons/Start"], "`Start`")
 
-    def profile(self):
+    def profile(self, name="Switch2Kit GameCube"):
         parser = configparser.ConfigParser()
         parser.optionxform = str
-        parser.read(ROOT / "Data/Sys/Profiles/GCPad/Switch2Kit GameCube.ini")
+        parser.read(ROOT / "Data/Sys/Profiles/GCPad" / (name + ".ini"))
         return parser["Profile"]
 
     def test_independent_trigger_travel_and_click(self):
@@ -33,7 +33,7 @@ class Switch2KitIntegrationTests(unittest.TestCase):
         for side, button in (("L", 3), ("R", 4)):
             self.assertEqual(profile[f"Triggers/{side}"], f"`Misc {button}`")
             self.assertEqual(profile[f"Triggers/{side}-Analog"], f"`Trigger {side}`")
-        self.assertEqual(profile["Rumble/Motor"], "")
+        self.assertEqual(profile["Rumble/Motor"], "`Motor`")
         self.assertNotIn("Device", profile)  # Never bind another person's SDL ordinal.
 
     def test_axis_and_dpad_names(self):
@@ -44,6 +44,28 @@ class Switch2KitIntegrationTests(unittest.TestCase):
                 self.assertEqual(profile[f"{group}/{direction}"], f"`{stick} {axis}`")
         for direction, button in (("Up", "N"), ("Down", "S"), ("Left", "W"), ("Right", "E")):
             self.assertEqual(profile[f"D-Pad/{direction}"], f"`Pad {button}`")
+
+    def test_pro_preset(self):
+        pro = self.profile("Switch2Kit Pro Controller 2")
+        self.assertEqual([pro[f"Buttons/{button}"] for button in "ABXY"],
+                         ["`Button E`", "`Button S`", "`Button N`", "`Button W`"])
+        gc = self.profile()
+        for key in gc:
+            if key not in [f"Buttons/{b}" for b in "ABXY"]:
+                self.assertEqual(pro[key], gc[key])
+        self.assertNotIn("Device", pro)
+
+    def test_mapping_requires_user_action_and_is_guarded(self):
+        widget = self.read("Source/Core/DolphinQt/Config/GamecubeControllersWidget.cpp")
+        refresh = widget.split("void GamecubeControllersWidget::RefreshSwitch2KitDevices()", 1)[1]
+        refresh = refresh.split("void GamecubeControllersWidget::OnSwitch2KitDeviceSelected", 1)[0]
+        self.assertNotIn("Switch2KitMapping::Apply", refresh)
+        self.assertIn("QSignalBlocker", refresh)
+        self.assertIn("&QComboBox::activated", widget)
+        self.assertIn("already_assigned", widget)
+        cmake = self.read("Source/Core/DolphinQt/CMakeLists.txt")
+        guarded = cmake.split("if(ENABLE_SWITCH2KIT)", 1)[1].split("endif()", 1)[0]
+        self.assertIn("Config/Mapping/Switch2KitMapping.cpp", guarded)
 
     def test_disabled_build_has_no_dependency(self):
         # Real CMake execution: with OFF, the module must not inspect Swift/SDK/SDL.

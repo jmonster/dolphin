@@ -46,9 +46,9 @@ void ControllersPane::CreateMainLayout()
   status->setWordWrap(true);
   layout->addWidget(status);
   auto* const help = new QLabel(
-      tr("Hold the controller's Sync button during discovery. For GameCube, choose Standard "
-         "Controller, open Configure, load the Switch2Kit GameCube profile, and select your "
-         "Switch2Kit SDL device. No separate controller app is needed."), this);
+      tr("Hold Sync to pair, then choose your GameCube or Pro controller next to a port above. "
+         "Recommended controls and rumble are applied for you. Configure is only needed for "
+         "custom mappings. No separate controller app is needed."), this);
   help->setWordWrap(true);
   layout->addWidget(help);
   connect(find, &QPushButton::clicked, this, [this] {

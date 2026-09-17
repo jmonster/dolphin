@@ -718,6 +718,11 @@ if(APPLE)
   endif()
 
   if(ENABLE_SWITCH2KIT)
+    target_sources(dolphin-emu PRIVATE
+      Config/Mapping/Switch2KitMapping.cpp
+      Config/Mapping/Switch2KitMapping.h
+      Config/Mapping/Switch2KitMappingPolicy.h
+    )
     set(SWITCH2KIT_BLUETOOTH_USAGE "<key>NSBluetoothAlwaysUsageDescription</key><string>Dolphin uses Bluetooth to connect to the controllers you select.</string>")
     switch2kit_embed(dolphin-emu)
   endif()

@@ -13,14 +13,29 @@ Close other applications that are managing the same controller. In Dolphin's
 Controller Settings, click **Find Switch 2 Controllers**, allow Bluetooth access,
 and hold Sync on the wireless controller. Discovery lasts 60 seconds.
 
-Choose **Standard Controller** for the desired GameCube port, open **Configure**,
-load the bundled **Switch2Kit GameCube** profile, and select the SDL device named
-**Switch2Kit GameCube**. This is not the wired **GameCube Adapter for Wii U** mode.
-The preset maps the physical Nintendo face buttons, both sticks, Start, Z, and
-D-pad; analog L/R travel and digital full clicks are separate bindings. Load the
-game normally. Your port bindings are saved using Dolphin's existing settings.
-Use Find again after restarting Dolphin; support does not scan or request
-Bluetooth permission merely because the application was launched.
+Choose the connected **Switch2Kit GameCube** or **Switch2Kit Pro Controller 2**
+in the physical-controller dropdown beside the desired GameCube port. This selects
+**Standard Controller**, applies the correct button/stick/trigger preset and binds
+**Motor** for rumble. No manual profile selection is needed. Each physical controller
+can be assigned to only one active Standard Controller port through this shortcut;
+set its old port to None before moving it. Other controller types and backends
+continue to use Configure normally.
+
+In **Configure**, **Use Recommended Mapping** applies the same mapping to the
+selected supported device. It is explicit: selecting a device, refreshing the list,
+or reconnecting a controller does not overwrite bindings. Replacing custom buttons,
+calibration, or other settings requires confirmation (Cancel is the default) and
+creates a uniquely named **Before Switch2Kit Port …** profile. Use Profile → Load
+to restore it. A missing preset or failed backup leaves the current mapping intact.
+
+The GameCube preset preserves independent analog L/R travel and digital full
+clicks. The Pro preset matches printed Nintendo A/B/X/Y labels; + is Start, R is
+GameCube Z, and ZL/ZR provide on/off GameCube L/R. Pro triggers cannot produce
+GameCube-style variable squeeze.
+
+Open the game normally. Port bindings use Dolphin's existing settings. Use Find
+again after restarting Dolphin; merely launching the app does not scan or request
+Bluetooth permission. This is not wired GameCube USB-adapter mode.
 
 The controller's physical identity is assigned a persistent Dolphin device number
 in `Switch2Kit.ini` in Dolphin's user configuration directory. Reconnecting two
@@ -34,7 +49,7 @@ selected device. No controller identifiers are written to diagnostic messages.
 The backend is OFF by default. Disabled builds do not require Swift and retain
 Dolphin's existing macOS deployment target and other platforms. Enabled builds
 require macOS 15+, Xcode 26+ with Swift 6.2+, and Dolphin's normal build dependencies.
-The submodule pins Switch2Kit to `00c383f4773b5e712c8f673c33791b810297ed2c`.
+The submodule pins Switch2Kit to `8088ce3ef6845fe90d8ff7a579e6498668bd65de`.
 
 ```sh
 git submodule update --init --recursive
@@ -56,11 +71,13 @@ for this fork. A workflow artifact is a development build, not a notarized relea
 
 ## Scope and validation
 
-Pro Controller 2 and individual Joy-Con 2 halves use the same engine but need
-appropriate Dolphin bindings. This change does not pair Joy-Con halves or add Wii
-motion integration. GameCube firmware rumble clips are not cancellable continuous
-SDL effects, so the GameCube preset deliberately has no rumble binding. Pro/Joy-Con
-continuous rumble uses the shared adapter and its live-input-loop renewal limit.
+GameCube and Pro Controller 2 receive recommended mappings. Individual Joy-Con 2
+halves still need appropriate Dolphin bindings; this does not pair the halves or
+add Wii motion integration. GameCube rumble uses its dedicated Bluetooth **on/off
+motor** channel, not HD-rumble waveforms or short firmware feedback clips. Pro/Joy-Con
+HD rumble retains the existing adapter implementation. Both types use cancellable
+outputs and the live-input-loop renewal limit. Zero stops the motor; stale requests,
+disconnection, and teardown cannot queue a later restart.
 
 The adapter processes bounded batches and commits each SDL transition; Dolphin
 still samples state at its existing cadence. This does not guarantee a game sees
@@ -69,15 +86,19 @@ handled by the shared adapter. On final shutdown its SDL devices are destroyed
 before the C context and SDL; asynchronous Bluetooth teardown never blocks the
 main run loop. The linked Swift library remains resident for process lifetime.
 
-`python3 Tools/test_switch2kit.py` checks the preset and build/lifecycle wiring.
+`python3 Tools/test_switch2kit.py` checks presets and build/lifecycle wiring.
+`python3 Tools/test_switch2kit_mapping.py --sanitize` executes the production mapping
+helper against test-only UI/configuration boundaries, including cancellation and
+backup failures. These boundaries do not replace the code in application builds.
 The native workflow compiles the complete application and inspects the embedded
 library and Bluetooth description. These checks do not establish physical
 controller behavior, clean-Mac startup, latency, or gameplay acceptance.
 
-Before treating a build as ready to play, test a real NSO GameCube controller:
+The user has confirmed input with the initial integration. The new automatic setup
+and physical rumble still need acceptance on a real NSO GameCube controller:
 pair/permission refusal and retry; every button and axis; light L/R travel without
 a click and independent full clicks; disconnect while holding input; reconnect;
-two identical controllers; app restart; normal quit; and an actual game session.
+two identical controllers; app restart; normal quit; motor start/stop; and an actual game session.
 Retain the distinction between build success and these hardware results.
 
 This contribution was prepared with AI assistance. The build glue, host wrapper,

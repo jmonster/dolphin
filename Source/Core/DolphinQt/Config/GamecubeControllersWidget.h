@@ -30,6 +30,11 @@ private:
 
   void OnGCTypeChanged(size_t index);
   void OnGCPadConfigure(size_t index);
+#ifdef HAVE_SWITCH2KIT
+  void RefreshSwitch2KitDevices();
+  void OnSwitch2KitDeviceSelected(size_t index);
+  std::array<QComboBox*, 4> m_switch2kit_devices{};
+#endif
 
   void CreateLayout();
   void ConnectWidgets();

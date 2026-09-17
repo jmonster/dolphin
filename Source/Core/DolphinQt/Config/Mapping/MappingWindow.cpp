@@ -64,11 +64,17 @@
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 #include "InputCommon/ControllerInterface/CoreDevice.h"
 #include "InputCommon/InputConfig.h"
+#ifdef HAVE_SWITCH2KIT
+#include "DolphinQt/Config/Mapping/Switch2KitMapping.h"
+#endif
 
 MappingWindow::MappingWindow(QWidget* parent, Type type, int port_num)
     : QDialog(parent), m_port(port_num)
 {
   setWindowTitle(tr("Port %1").arg(port_num + 1));
+#ifdef HAVE_SWITCH2KIT
+  m_switch2kit_gamecube = type == Type::MAPPING_GCPAD;
+#endif
 
   CreateDevicesLayout();
   CreateProfilesLayout();
@@ -204,6 +210,23 @@ void MappingWindow::CreateMainLayout()
   m_config_layout->addWidget(m_profiles_box);
 
   m_main_layout->addLayout(m_config_layout);
+#ifdef HAVE_SWITCH2KIT
+  m_switch2kit_recommended = new NonDefaultQPushButton(tr("Use Recommended Mapping"), this);
+  m_switch2kit_recommended->setToolTip(tr("Apply the selected Switch 2 controller's buttons, "
+                                       "sticks, triggers and rumble. Custom mappings are backed up."));
+  m_switch2kit_recommended->setVisible(false);
+  m_main_layout->addWidget(m_switch2kit_recommended);
+  connect(m_switch2kit_recommended, &QPushButton::clicked, this, [this] {
+    const auto device = m_controller->GetDefaultDevice().ToString();
+    if (m_switch2kit_gamecube && Switch2KitMapping::Apply(this, m_port, device))
+    {
+      PopulateProfileSelection();
+      m_profiles_combo->setCurrentText(
+          QString::fromStdString(Switch2KitMapping::ProfileForDevice(device)));
+      emit ConfigChanged();
+    }
+  });
+#endif
   m_main_layout->addWidget(m_tab_widget);
   m_main_layout->addWidget(m_button_box);
 
@@ -418,6 +441,10 @@ void MappingWindow::UpdateDeviceList()
   }
 
   const auto default_device = m_controller->GetDefaultDevice().ToString();
+#ifdef HAVE_SWITCH2KIT
+  m_switch2kit_recommended->setVisible(
+      m_switch2kit_gamecube && !Switch2KitMapping::ProfileForDevice(default_device).empty());
+#endif
 
   if (!default_device.empty())
   {
