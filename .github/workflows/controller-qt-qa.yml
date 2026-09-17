@@ -1,0 +1,64 @@
+name: Controller Qt source qualification
+on:
+  push:
+    branches: [qa/publish-controller-setup]
+    paths: [.github/workflows/controller-qt-qa.yml]
+permissions:
+  contents: read
+jobs:
+  qt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 7da781f77600f7e24790f96f40954ca336b8779d
+          submodules: recursive
+          persist-credentials: false
+      - name: Install real Qt headers and native build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qt6-base-dev qt6-base-private-dev qt6-svg-dev libgl-dev libudev-dev libevdev-dev libasound2-dev libpulse-dev libxrandr-dev libxi-dev libusb-1.0-0-dev nasm automake libtool ninja-build clang-format-18
+      - name: Configure ordinary Linux dependencies without the macOS backend
+        run: |
+          cmake -S . -B build-qt -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_SWITCH2KIT=OFF \
+            -DENABLE_QT=ON -DENABLE_SDL=ON -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF \
+            -DUSE_SYSTEM_LIBS=OFF -DENCODE_FRAMEDUMPS=OFF \
+            2>&1 | tee qt-configure.log
+      - name: Compile actual UI translation units with the new code enabled
+        run: |
+          python3 - <<'PY'
+          import json, shlex, subprocess
+          from pathlib import Path
+          commands = json.loads(Path('build-qt/compile_commands.json').read_text())
+          suffixes = ['Config/GamecubeControllersWidget.cpp', 'Config/Mapping/MappingWindow.cpp']
+          helper = 'Source/Core/DolphinQt/Config/Mapping/Switch2KitMapping.cpp'
+          for suffix in suffixes + [helper]:
+              original = suffixes[0] if suffix == helper else suffix
+              row = next(row for row in commands if row['file'].endswith(original))
+              args = shlex.split(row['command'])
+              index = args.index('-o'); del args[index:index+2]
+              args.remove('-c')
+              if suffix == helper:
+                  args[args.index(row['file'])] = str(Path(helper).resolve())
+              args += ['-DHAVE_SWITCH2KIT', '-fsyntax-only']
+              print('Checking', suffix, flush=True)
+              subprocess.run(args, cwd=row['directory'], check=True, timeout=180)
+          PY
+      - name: Retain scoped formatting diff without changing the feature branch
+        if: always()
+        run: |
+          for f in Source/Core/DolphinQt/Config/{GamecubeControllersWidget.cpp,GamecubeControllersWidget.h,ControllersPane.cpp} Source/Core/DolphinQt/Config/Mapping/{MappingWindow.cpp,MappingWindow.h,Switch2KitMapping.cpp,Switch2KitMapping.h,Switch2KitMappingPolicy.h}; do
+            clang-format-18 -i "$f"
+          done
+          git diff -- Source/Core/DolphinQt > controller-format.patch
+          git archive HEAD -o qt-source.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: controller-qt-source-qualification
+          path: |
+            controller-format.patch
+            qt-configure.log
+          retention-days: 7
