@@ -1,0 +1,49 @@
+name: Publish controller setup review branch
+on:
+  push:
+    branches: [qa/publish-controller-setup]
+    paths: [.github/workflows/publish-controller-setup.yml]
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feature/switch2kit-easy-setup
+      - name: Apply verified files and pin the companion motor library
+        env:
+          PAYLOAD: >-
+            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
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = cd2209c3adb8f387c1f6fc9258017765c5ad8ed9
+          python3 - <<'PY'
+          import base64, hashlib, json, os, zlib
+          from pathlib import Path
+          for edit in json.loads(zlib.decompress(base64.b64decode(os.environ['PAYLOAD'], validate=True))):
+              path = Path(edit['path'])
+              assert not path.is_absolute() and '..' not in path.parts
+              original = path.read_text() if path.exists() else ''
+              if edit['old'] is None:
+                  assert not path.exists()
+              else:
+                  assert hashlib.sha256(original.encode()).hexdigest() == edit['old'], path
+              lines = original.splitlines(keepends=True)
+              for start, end, replacement in reversed(edit['ops']):
+                  lines[start:end] = replacement.splitlines(keepends=True)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(''.join(lines))
+          PY
+          git diff --check
+          git add -A
+          GIT_INDEX_FILE="$RUNNER_TEMP/verify-index" git read-tree --empty
+          git ls-files --stage | awk '$1 != "160000"' | GIT_INDEX_FILE="$RUNNER_TEMP/verify-index" git update-index --index-info
+          test "$(GIT_INDEX_FILE="$RUNNER_TEMP/verify-index" git write-tree)" = f77e02c495ce4c68d64152b23aae9d180995faf3
+          git update-index --cacheinfo 160000,8088ce3ef6845fe90d8ff7a579e6498668bd65de,Externals/Switch2Kit
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Add per-port Switch 2 controller setup and recommended mappings with rumble' -m 'Choose GameCube/Pro controllers beside each port. Preserve custom mappings with confirmation and backups; never reset on hotplug. Include both presets, production mapping-helper regressions and the tested GameCube motor library. AI-assisted; physical rumble acceptance remains separate.'
+          git push origin HEAD:refs/heads/feature/switch2kit-easy-setup
