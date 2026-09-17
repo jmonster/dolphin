@@ -1,0 +1,32 @@
+name: Apply reviewed controller formatting
+on:
+  push:
+    branches: [qa/publish-controller-setup]
+    paths: [.github/workflows/controller-format-apply.yml]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feature/switch2kit-easy-setup
+      - name: Format and test the unchanged review head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 7da781f77600f7e24790f96f40954ca336b8779d
+          python3 -m venv "$RUNNER_TEMP/formatter"
+          "$RUNNER_TEMP/formatter/bin/pip" install 'clang-format==21.1.8'
+          files=(Source/Core/DolphinQt/Config/ControllersPane.cpp Source/Core/DolphinQt/Config/GamecubeControllersWidget.cpp Source/Core/DolphinQt/Config/Mapping/MappingWindow.cpp Source/Core/DolphinQt/Config/Mapping/Switch2KitMapping.cpp)
+          "$RUNNER_TEMP/formatter/bin/clang-format" -i "${files[@]}"
+          git diff --check
+          python3 Tools/test_switch2kit.py
+          python3 Tools/test_switch2kit_mapping.py --sanitize
+          python3 Tools/test_switch2kit_host.py --sanitize
+          git add -- "${files[@]}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Format controller setup UI using the repository style'
+          git push origin HEAD:refs/heads/feature/switch2kit-easy-setup
