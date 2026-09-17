@@ -21,6 +21,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends qt6-base-dev qt6-base-private-dev qt6-svg-dev libgl-dev libudev-dev libevdev-dev libasound2-dev libpulse-dev libxrandr-dev libxi-dev libusb-1.0-0-dev nasm automake libtool ninja-build clang-format-18
       - name: Configure ordinary Linux dependencies without the macOS backend
         run: |
+          set -o pipefail
           cmake -S . -B build-qt -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_SWITCH2KIT=OFF \
             -DENABLE_QT=ON -DENABLE_SDL=ON -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF \
@@ -34,6 +35,7 @@ jobs:
           commands = json.loads(Path('build-qt/compile_commands.json').read_text())
           suffixes = ['Config/GamecubeControllersWidget.cpp', 'Config/Mapping/MappingWindow.cpp']
           helper = 'Source/Core/DolphinQt/Config/Mapping/Switch2KitMapping.cpp'
+          results = []
           for suffix in suffixes + [helper]:
               original = suffixes[0] if suffix == helper else suffix
               row = next(row for row in commands if row['file'].endswith(original))
@@ -45,15 +47,20 @@ jobs:
               args += ['-DHAVE_SWITCH2KIT', '-fsyntax-only']
               print('Checking', suffix, flush=True)
               subprocess.run(args, cwd=row['directory'], check=True, timeout=180)
+              results.append({'source': suffix, 'result': 'passed', 'real_qt_headers': True})
+          Path('qt-syntax-results.json').write_text(json.dumps(results, indent=2))
           PY
       - name: Retain scoped formatting diff without changing the feature branch
         if: always()
         run: |
+          # Ubuntu's formatter predates the c++23 spelling. Use its Latest
+          # parser mode with the same repository rules in a temporary file.
+          # Do not modify the repository's language or formatter settings.
+          sed 's/^Standard: c++23$/Standard: Latest/' Source/.clang-format > "$RUNNER_TEMP/controller-clang-format"
           for f in Source/Core/DolphinQt/Config/{GamecubeControllersWidget.cpp,GamecubeControllersWidget.h,ControllersPane.cpp} Source/Core/DolphinQt/Config/Mapping/{MappingWindow.cpp,MappingWindow.h,Switch2KitMapping.cpp,Switch2KitMapping.h,Switch2KitMappingPolicy.h}; do
-            clang-format-18 -i "$f"
+            clang-format-18 --style="file:$RUNNER_TEMP/controller-clang-format" -i "$f"
           done
           git diff -- Source/Core/DolphinQt > controller-format.patch
-          git archive HEAD -o qt-source.zip
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -61,4 +68,5 @@ jobs:
           path: |
             controller-format.patch
             qt-configure.log
+            qt-syntax-results.json
           retention-days: 7
