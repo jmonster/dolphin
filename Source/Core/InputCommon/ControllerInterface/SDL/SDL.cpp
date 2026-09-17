@@ -24,6 +24,9 @@
 
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 #include "InputCommon/ControllerInterface/SDL/SDLGamepad.h"
+#ifdef HAVE_SWITCH2KIT
+#include "InputCommon/ControllerInterface/SDL/Switch2Kit.h"
+#endif
 
 namespace ciface::SDL
 {
@@ -193,6 +196,9 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
 
     Common::ScopeGuard quit_guard([] {
       // TODO: there seems to be some sort of memory leak with SDL, quit isn't freeing everything up
+#ifdef HAVE_SWITCH2KIT
+      ShutdownSwitch2Kit();
+#endif
       SDL_Quit();
     });
     {
@@ -204,6 +210,9 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
         return;
       }
 
+#ifdef HAVE_SWITCH2KIT
+      InitializeSwitch2Kit();
+#endif
       const Uint32 custom_events_start = SDL_RegisterEvents(2);
       if (custom_events_start == static_cast<Uint32>(-1))
       {
@@ -259,6 +268,9 @@ void InputBackend::PopulateDevices()
 
 void InputBackend::UpdateInput(std::vector<std::weak_ptr<ciface::Core::Device>>&)
 {
+#ifdef HAVE_SWITCH2KIT
+  UpdateSwitch2Kit();
+#endif
   SDL_UpdateGamepads();
 }
 
@@ -273,7 +285,7 @@ void InputBackend::OpenAndAddDevice(SDL_JoystickID instance_id)
         SDL_GetNumJoystickHats(js) > 255 || SDL_GetNumJoystickBalls(js) > 255)
     {
       // This device is invalid, don't use it
-      // Some crazy devices (HP webcam 2100) end up as HID devices
+      // Some crazy devices (HP webcam) end up as HID devices
       // SDL tries parsing these as Joysticks
       return;
     }

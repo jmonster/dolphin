@@ -52,5 +52,6 @@
     <true/>
     <key>UIDesignRequiresCompatibility</key>
     <true/>
+    ${SWITCH2KIT_BLUETOOTH_USAGE}
 </dict>
 </plist>

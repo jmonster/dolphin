@@ -3,6 +3,10 @@
 
 #pragma once
 
+#ifdef HAVE_SWITCH2KIT
+#include "InputCommon/ControllerInterface/SDL/Switch2Kit.h"
+#endif
+
 #include <array>
 
 #include <SDL3/SDL_gamepad.h>
@@ -330,6 +334,12 @@ public:
   std::string GetName() const override;
   std::string GetSource() const override;
   SDL_JoystickID GetSDLInstanceID() const;
+#ifdef HAVE_SWITCH2KIT
+  std::optional<int> GetPreferredId() const override
+  {
+    return GetSwitch2KitPreferredId(GetSDLInstanceID());
+  }
+#endif
   Core::DeviceRemoval UpdateInput() override
   {
     UpdateBatteryLevel();
