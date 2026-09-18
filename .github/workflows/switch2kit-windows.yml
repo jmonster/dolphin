@@ -9,7 +9,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   windows:
-    runs-on: windows-2025-vs2026
+    # Swift 6.2.1 bundles Clang 19; VS 2026 requires Clang 20 for its STL.
+    runs-on: windows-2022
     timeout-minutes: 120
     env:
       VCPKG_MAX_CONCURRENCY: 3
