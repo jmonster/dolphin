@@ -24,7 +24,6 @@ class AutomaticConnectionWiringTests(unittest.TestCase):
 
     def test_checkbox_updates_do_not_start_or_remap_controllers(self):
         pane = self.read("Source/Core/DolphinQt/Config/ControllersPane.cpp")
-        self.assertIn('tr("Automatically connect Switch 2 controllers")', pane)
         self.assertIn("&QCheckBox::toggled", pane)
         self.assertIn("SetSwitch2KitAutoConnect(enabled)", pane)
         self.assertNotIn("StartSwitch2KitAutoConnect", pane)

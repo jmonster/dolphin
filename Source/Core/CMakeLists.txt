@@ -25,6 +25,25 @@ if(ENABLE_SWITCH2KIT)
       DolphinQt/Config/Mapping/Switch2KitMapping.cpp
       DolphinQt/Config/Mapping/Switch2KitMapping.h)
   endif()
+  if(WIN32)
+    # The executables live in child directories and share one runtime directory.
+    # Stage the native DLL once before linking any of them (not a global install).
+    add_custom_target(switch2kit-windows-runtime
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:dolphin-emu>"
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:Switch2Kit::C>" "$<TARGET_FILE_DIR:dolphin-emu>"
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices"
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${PROJECT_SOURCE_DIR}/Externals/Switch2Kit/CREDITS.md"
+        "$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices/CREDITS.md"
+      COMMAND "${CMAKE_COMMAND}" -E copy_directory "${PROJECT_SOURCE_DIR}/Externals/Switch2Kit/LICENSES"
+        "$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices/LICENSES"
+      DEPENDS Switch2KitCBuild VERBATIM)
+    foreach(_host dolphin-emu dolphin-nogui dolphin-tool)
+      if(TARGET "${_host}")
+        add_dependencies("${_host}" switch2kit-windows-runtime)
+      endif()
+    endforeach()
+  endif()
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     foreach(_host dolphin-emu dolphin-nogui dolphin-tool)
       if(TARGET "${_host}")

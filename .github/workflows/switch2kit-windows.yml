@@ -1,0 +1,63 @@
+name: Switch2Kit Windows application
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: switch2kit-windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      VCPKG_MAX_CONCURRENCY: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: compnerd/gha-setup-swift@397094e75494a93fa8d81db0268dbc8f5d6cf7c6
+        with:
+          swift-version: swift-6.2.1-release
+          swift-build: 6.2.1-RELEASE
+      - name: Build the complete controller-enabled application
+        shell: pwsh
+        run: |
+          & ./Tools/build-switch2kit-windows.ps1 2>&1 | Tee-Object windows-build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Stage and launch the application away from the build tree
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'Dolphin-Switch2Kit-windows-x86_64'
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          # Robocopy follows directory junctions and copies linked resources.
+          robocopy 'build-switch2kit-windows/Binaries' $stage /E /NFL /NDL /NJH /NJS
+          if ($LASTEXITCODE -ge 8) { throw 'Application staging failed.' }
+          $global:LASTEXITCODE = 0
+          # A fresh portable test profile suppresses the first-run analytics question.
+          New-Item -ItemType Directory -Path "$stage/User/Config" -Force | Out-Null
+          Set-Content "$stage/portable.txt" ''
+          Set-Content "$stage/User/Config/Dolphin.ini" "[Analytics]`nEnabled = False`nPermissionAsked = True`n[AutoUpdate]`nUpdateTrack ="
+          Move-Item build-switch2kit-windows "$env:RUNNER_TEMP/disabled-build-tree"
+          & ./Tools/test_switch2kit_windows_launch.ps1 -Executable "$stage/Dolphin.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Compress-Archive -Path $stage -DestinationPath 'Dolphin-Switch2Kit-windows-x86_64.zip'
+      - name: Controller-enabled development application
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Dolphin-Switch2Kit-windows-x86_64
+          path: Dolphin-Switch2Kit-windows-x86_64.zip
+          retention-days: 14
+          if-no-files-found: error
+      - name: Native diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Dolphin-Switch2Kit-windows-diagnostics
+          path: |
+            windows-*.log
+            windows-launch.json
+          retention-days: 7
