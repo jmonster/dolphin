@@ -1,4 +1,4 @@
-# Native Switch 2 controller input on macOS
+# Native Switch 2 controller input
 
 This optional backend embeds [Switch2Kit](https://github.com/jmonster/Switch2Kit)
 inside Dolphin. Bluetooth discovery and input belong to Dolphin; no standalone
@@ -80,9 +80,13 @@ selected device. No controller identifiers are written to diagnostic messages.
 ## Building
 
 The backend is OFF by default. Disabled builds do not require Swift and retain
-Dolphin's existing macOS deployment target and other platforms. Enabled builds
-require macOS 15+, Xcode 26+ with Swift 6.2+, and Dolphin's normal build dependencies.
-The submodule pins Switch2Kit to `a9d43b1f63d94f8844755a510bf6ecc876bc8c51`.
+Dolphin's existing platform requirements. Enabled desktop builds require SDL and
+Qt, plus the platform-specific toolchain below. Initialize the submodules at the
+revisions recorded in this branch; do not substitute a moving SDK branch.
+
+### macOS
+
+Use macOS 15+, Xcode 26+ with Swift 6.2+, and Dolphin's normal build dependencies.
 
 ```sh
 git submodule update --init --recursive
@@ -101,6 +105,37 @@ application before Dolphin's ordinary relocation and signing steps. No signing
 identity, entitlement, Gatekeeper setting, or notarization claim is added.
 The **Native Switch2Kit** workflow builds separate arm64/x86_64 application ZIPs
 for this fork. A workflow artifact is a development build, not a notarized release.
+
+### Linux
+
+Use Swift 6.2 or newer, CMake, Ninja, Qt 6 development packages, and Dolphin's
+normal Linux build dependencies. `Tools/build-switch2kit-linux.sh --run` builds,
+installs, and launches the controller-enabled application. The Linux workflow
+records the exact dependency installation and checks the relocated installation.
+
+### Windows x64
+
+Use the latest Visual Studio 2026 **Desktop development with C++** tools, Windows
+SDK 10.0.22621 or newer, CMake, Ninja, Git, and native x64 Swift **6.3 or newer**.
+CI pins Swift 6.3.3. Run from 64-bit PowerShell:
+
+```powershell
+./Tools/build-switch2kit-windows.ps1 -Run
+```
+
+Swift 6.2's bundled Clang 19 is incompatible with the Visual Studio 2026 standard
+library headers. An unrelated newer `clang` on PATH does not update SwiftPM's
+compiler. Keep Dolphin's Visual Studio compiler guard and the Microsoft STL
+version checks enabled; select a compatible Swift installation instead.
+
+The helper selects Visual Studio 2026, passes one Swift installation explicitly
+to CMake, and builds the actual Switch2Kit C/WinRT library before Dolphin. It
+stages `Switch2KitC.dll` and its notices beside `Dolphin.exe`. The matching Swift
+runtime must remain installed: the Windows artifact is a development build, not
+a self-contained installer. Runtime PATH changes in the helper are process-local.
+The Windows workflow relocates the application and checks its window, local
+controller DLL, normal quit, and relaunch. These checks do not validate physical
+Bluetooth, pairing, rumble, or gameplay.
 
 ## Scope and validation
 

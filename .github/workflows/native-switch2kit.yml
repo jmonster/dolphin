@@ -23,6 +23,11 @@ jobs:
             Source/Core/DolphinQt/Config/GamecubeControllersWidget.cpp \
             Source/Core/DolphinQt/Config/Mapping/MappingWindow.cpp \
             Source/Core/DolphinQt/Config/Mapping/Switch2KitMapping.cpp
+      - name: Check exact-width SDL adapter capacity
+        run: |
+          git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
+          CXX=clang++ python3 Tools/test_switch2kit_capacity.py
+          CXX=g++ python3 Tools/test_switch2kit_capacity.py
       - run: python3 Tools/test_switch2kit.py
       - run: python3 Tools/test_switch2kit_autoconnect.py
       - run: python3 Tools/test_switch2kit_mapping.py --sanitize

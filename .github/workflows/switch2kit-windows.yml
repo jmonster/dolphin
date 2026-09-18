@@ -9,8 +9,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   windows:
-    # Swift 6.2.1 bundles Clang 19; VS 2026 requires Clang 20 for its STL.
-    runs-on: windows-2022
+    runs-on: windows-2025-vs2026
     timeout-minutes: 120
     env:
       VCPKG_MAX_CONCURRENCY: 3
@@ -21,8 +20,9 @@ jobs:
           submodules: recursive
       - uses: compnerd/gha-setup-swift@397094e75494a93fa8d81db0268dbc8f5d6cf7c6
         with:
-          swift-version: swift-6.2.1-release
-          swift-build: 6.2.1-RELEASE
+          # Swift 6.2 ships Clang 19, which the VS 2026 STL rejects.
+          swift-version: swift-6.3.3-release
+          swift-build: 6.3.3-RELEASE
       - name: Build the complete controller-enabled application
         shell: pwsh
         run: |

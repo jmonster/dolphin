@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Static integration regressions; not a Swift, Bluetooth, or gameplay test."""
 import configparser
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -115,31 +116,48 @@ class Switch2KitIntegrationTests(unittest.TestCase):
                     self.assertEqual(marker.exists(), accepted, result.stdout + result.stderr)
                     self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
-    def test_windows_ci_uses_swift_compatible_runner(self):
+    def test_windows_ci_uses_dolphin_compatible_toolchain(self):
         workflow = self.read(".github/workflows/switch2kit-windows.yml")
-        # Swift 6.2.1 uses Clang 19; VS 2026's STL requires Clang 20.
-        # Keep these pins paired until a newer toolchain is qualified together.
-        self.assertIn("    runs-on: windows-2022\n", workflow)
-        self.assertIn("swift-version: swift-6.2.1-release", workflow)
-        self.assertIn("swift-build: 6.2.1-RELEASE", workflow)
+        # Dolphin requires VS 2026; downgrading to VS 2022 only moves the
+        # failure from Swift's C++ headers to Dolphin's compiler guard.
+        self.assertRegex(workflow, r"(?m)^\s+runs-on: windows-2025-vs2026\s*$")
+        version = re.search(r"(?m)^\s+swift-version: swift-(\d+\.\d+(?:\.\d+)?)-release\s*$",
+                            workflow)
+        self.assertIsNotNone(version, "Pin a released Swift toolchain")
+        # Swift 6.2 ships Clang 19, which the VS 2026 STL rejects. Allow
+        # patch updates without freezing an obsolete compiler in this test.
+        self.assertGreaterEqual(tuple(map(int, version[1].split("."))), (6, 3))
+        self.assertRegex(workflow, r"(?m)^\s+swift-build: " + re.escape(version[1]) +
+                         r"-RELEASE\s*$")
 
-    def test_windows_build_selects_only_visual_studio_2022(self):
+    def test_windows_build_selects_compatible_visual_studio_and_swift(self):
         script = self.read("Tools/build-switch2kit-windows.ps1")
         selection = next(line for line in script.splitlines()
                          if line.startswith("$vs = & $vswhere "))
-        self.assertIn("-version '[17.0,18.0)'", selection)
+        self.assertIn("-version '[18.0,19.0)'", selection)
         self.assertIn("-requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64", selection)
         self.assertIn("if ($LASTEXITCODE -ne 0 -or -not $vs) { throw", script)
         self.assertLess(script.index(selection), script.index("VsDevCmd.bat"))
+        self.assertIn("[version]$Matches[1] -lt [version]'6.3'", script)
+        self.assertLess(script.index("$swift = (Get-Command swift"), script.index("VsDevCmd.bat"))
+        self.assertIn('"-DSWITCH2KIT_SWIFT=$swift" "-DSWITCH2KIT_SWIFTC=$swiftc"', script)
 
     def test_windows_fix_keeps_native_build_and_launch_required(self):
         script = self.read("Tools/build-switch2kit-windows.ps1")
         workflow = self.read(".github/workflows/switch2kit-windows.yml")
         self.assertIn("-DENABLE_SWITCH2KIT=ON", script)
-        self.assertIn("--target dolphin-emu", script)
+        self.assertLess(script.index("--target Switch2KitCBuild"),
+                        script.index("--target dolphin-emu"))
+        # Both native targets must propagate failures, not merely appear in
+        # comments or optional steps. The staged application test stays required.
+        for target in ("Switch2KitCBuild", "dolphin-emu"):
+            self.assertRegex(script, r"(?m)^cmake --build [^\n]+ --target " + target +
+                             r"[^\n]*\nif \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}")
         self.assertIn("Switch2KitC.dll", script)
         self.assertIn("./Tools/build-switch2kit-windows.ps1", workflow)
         self.assertIn("./Tools/test_switch2kit_windows_launch.ps1", workflow)
+        self.assertLess(workflow.index("Move-Item build-switch2kit-windows"),
+                        workflow.index("./Tools/test_switch2kit_windows_launch.ps1"))
         self.assertNotIn("continue-on-error", workflow)
         self.assertNotIn("_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH", script + workflow)
 
