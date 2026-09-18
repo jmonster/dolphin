@@ -24,6 +24,7 @@ struct Switch2KitStatus
   bool running = false;
   bool scanning = false;
   bool stopping = false;
+  bool auto_connect = false;
   std::uint32_t controllers = 0;
   Switch2KitBluetooth bluetooth = Switch2KitBluetooth::Unknown;
   int error = 0;
@@ -35,8 +36,12 @@ void InitializeSwitch2Kit();
 void ShutdownSwitch2Kit();
 void UpdateSwitch2Kit();
 
-// Find must be called on the macOS main thread with its run loop running.
+// These three actions must run on the macOS main thread with its run loop running.
 int FindSwitch2Controllers();
+// Consume the saved opt-in once after backend initialization; never a polling task.
+int StartSwitch2KitAutoConnect();
+// Save first, then apply; disabling retains ready connections. Returns an SDK error.
+int SetSwitch2KitAutoConnect(bool enabled);
 void StopSwitch2Controllers();
 Switch2KitStatus GetSwitch2KitStatus();
 std::optional<int> GetSwitch2KitPreferredId(std::uint32_t instance);

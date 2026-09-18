@@ -117,4 +117,109 @@ int main()
   ShutdownSwitch2Kit();
   assert(Fake::created == 2 && Fake::destroyed == 2 && Fake::adapters == 0);
   std::cout << "PASS: concurrent poll/status/enumeration/stop/shutdown and reinitialization\n";
+
+  // Auto-connect is a saved opt-in, not a repeated Find operation.
+  Fake::saved.clear();
+  Fake::settings.clear();
+  Fake::exists = false;
+  InitializeSwitch2Kit();
+  assert(!GetSwitch2KitStatus().auto_connect);
+  assert(StartSwitch2KitAutoConnect() == S2K_OK);
+  assert(Fake::context == nullptr);
+  const auto manual_windows = Fake::discoveries;
+  assert(SetSwitch2KitAutoConnect(true) == S2K_OK);
+  assert(Fake::settings["AutoConnect"] == "True");
+  assert(Fake::context->automatic && GetSwitch2KitStatus().auto_connect);
+  UpdateSwitch2Kit();
+  const auto starts = Fake::starts, configurations = Fake::configurations;
+  const auto setting_saves = Fake::saves, setting_loads = Fake::loads;
+  for (int i = 0; i != 1000; ++i)
+  {
+    UpdateSwitch2Kit();
+    (void)GetSwitch2KitStatus();
+    assert(StartSwitch2KitAutoConnect() == S2K_OK);
+  }
+  assert(Fake::starts == starts && Fake::configurations == configurations);
+  assert(Fake::discoveries == manual_windows);
+  assert(Fake::saves == setting_saves && Fake::loads == setting_loads);
+  assert(GetSwitch2KitPreferredId(40) == 0);
+  const auto identities = Fake::saved;
+  assert(Fake::settings["AutoConnect"] == "True");
+  const auto adapter_count = Fake::constructions.load();
+  assert(SetSwitch2KitAutoConnect(false) == S2K_OK);
+  assert(!Fake::context->automatic && GetSwitch2KitStatus().running);
+  assert(Fake::adapters == 1 && Fake::constructions == adapter_count);
+  assert(Fake::saved == identities && Fake::settings["AutoConnect"] == "False");
+  std::cout << "PASS: opt-in uses continuous policy without window renewal, remapping or per-poll I/O\n";
+
+  Fake::readable = false;
+  assert(SetSwitch2KitAutoConnect(true) == S2K_INTERNAL_ERROR);
+  assert(!GetSwitch2KitStatus().auto_connect && !Fake::context->automatic);
+  Fake::readable = true;
+  Fake::writable = false;
+  assert(SetSwitch2KitAutoConnect(true) == S2K_INTERNAL_ERROR);
+  assert(!GetSwitch2KitStatus().auto_connect && Fake::saved == identities);
+  Fake::writable = true;
+  Fake::configure_error = S2K_BUSY;
+  assert(SetSwitch2KitAutoConnect(true) == S2K_BUSY);
+  UpdateSwitch2Kit();
+  assert(GetSwitch2KitStatus().error == S2K_BUSY); // Input cannot hide a failed policy change.
+  Fake::configure_error = 0;
+  assert(FindSwitch2Controllers() == S2K_OK);
+  assert(Fake::context->automatic && GetSwitch2KitStatus().error == S2K_OK);
+  StopSwitch2Controllers();
+  Fake::context->state.stopping = false;
+  const auto stopped_starts = Fake::starts;
+  for (int i = 0; i != 100; ++i)
+  {
+    UpdateSwitch2Kit();
+    assert(StartSwitch2KitAutoConnect() == S2K_OK);
+  }
+  assert(Fake::starts == stopped_starts && Fake::adapters == 0);
+  assert(!GetSwitch2KitStatus().running && GetSwitch2KitStatus().auto_connect);
+  assert(FindSwitch2Controllers() == S2K_OK);
+  assert(Fake::context->automatic && Fake::discoveries == manual_windows);
+  ShutdownSwitch2Kit();
+  std::cout << "PASS: failed settings/policy changes are visible; manual Disconnect beats auto-connect\n";
+
+  const auto before_relaunch = Fake::created.load();
+  InitializeSwitch2Kit();
+  UpdateSwitch2Kit();
+  assert(Fake::created == before_relaunch && GetSwitch2KitStatus().auto_connect);
+  assert(StartSwitch2KitAutoConnect() == S2K_OK);
+  assert(Fake::created == before_relaunch + 1 && Fake::context->automatic);
+  ShutdownSwitch2Kit();
+  InitializeSwitch2Kit();
+  StopSwitch2Controllers(); // A deferred startup callback must not undo an explicit stop.
+  assert(StartSwitch2KitAutoConnect() == S2K_OK);
+  assert(Fake::context == nullptr);
+  ShutdownSwitch2Kit();
+  InitializeSwitch2Kit();
+  Fake::create_error = 4;
+  assert(StartSwitch2KitAutoConnect() == 4);
+  assert(StartSwitch2KitAutoConnect() == S2K_OK);
+  assert(GetSwitch2KitStatus().error == 4 && Fake::context == nullptr);
+  Fake::create_error = 0;
+  Fake::start_error = S2K_BUSY;
+  assert(FindSwitch2Controllers() == S2K_BUSY);
+  UpdateSwitch2Kit();
+  assert(Fake::adapters == 0);
+  Fake::start_error = 0;
+  assert(FindSwitch2Controllers() == S2K_OK);
+  assert(Fake::context->automatic);
+  ShutdownSwitch2Kit();
+  Fake::readable = false;
+  InitializeSwitch2Kit();
+  assert(!GetSwitch2KitStatus().auto_connect);
+  assert(StartSwitch2KitAutoConnect() == S2K_OK && Fake::context == nullptr);
+  ShutdownSwitch2Kit();
+  Fake::readable = true;
+  Fake::settings["AutoConnect"] = "invalid";
+  InitializeSwitch2Kit();
+  assert(!GetSwitch2KitStatus().auto_connect);
+  assert(StartSwitch2KitAutoConnect() == S2K_OK && Fake::context == nullptr);
+  ShutdownSwitch2Kit();
+  assert(Fake::adapters == 0 && Fake::created == Fake::destroyed);
+  std::cout << "PASS: saved consent, main-thread lazy startup, one-shot failures and stop-before-start\n";
+
 }

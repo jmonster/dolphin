@@ -24,6 +24,7 @@ jobs:
             Source/Core/DolphinQt/Config/Mapping/MappingWindow.cpp \
             Source/Core/DolphinQt/Config/Mapping/Switch2KitMapping.cpp
       - run: python3 Tools/test_switch2kit.py
+      - run: python3 Tools/test_switch2kit_autoconnect.py
       - run: python3 Tools/test_switch2kit_mapping.py --sanitize
       - name: Execute host lifecycle and identity regressions with sanitizers
         run: python3 Tools/test_switch2kit_host.py --sanitize
@@ -76,8 +77,9 @@ jobs:
         run: brew install cmake ninja nasm automake libtool qt@6
       - name: Check source pin and integration
         run: |
-          test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = 8088ce3ef6845fe90d8ff7a579e6498668bd65de
+          test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = ef26a17eb018ab6db6c944c33153ced332e2de91
           python3 Tools/test_switch2kit.py
+          python3 Tools/test_switch2kit_autoconnect.py
           python3 Tools/test_switch2kit_host.py --sanitize
           python3 Tools/test_switch2kit_mapping.py --sanitize
       - name: Build the complete application

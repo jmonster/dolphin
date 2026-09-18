@@ -13,7 +13,7 @@
 #include <thread>
 
 using S2KResult = int;
-constexpr int S2K_OK = 0, S2K_BUSY = 5, S2K_NOT_READY = 6;
+constexpr int S2K_OK = 0, S2K_BUSY = 5, S2K_NOT_READY = 6, S2K_INTERNAL_ERROR = 13;
 constexpr int S2K_BT_RESETTING = 1, S2K_BT_UNSUPPORTED = 2, S2K_BT_UNAUTHORIZED = 3;
 constexpr int S2K_BT_OFF = 4, S2K_BT_ON = 5, S2K_DISCOVERY_SCANNING = 1;
 constexpr unsigned S2K_MAX_CONTROLLERS = 64;
@@ -23,7 +23,7 @@ struct S2KSnapshot
 {
   unsigned running{}, stopping{}, discovery{}, count{}, bluetooth{};
 };
-struct S2KContext { S2KSnapshot state; };
+struct S2KContext { S2KSnapshot state; bool automatic = false; };
 
 namespace Fake
 {
@@ -31,6 +31,9 @@ inline std::recursive_mutex joystick_mutex;
 inline thread_local int joystick_depth = 0;
 inline std::atomic<int> created = 0, destroyed = 0, adapters = 0, constructions = 0, pumps = 0;
 inline S2KResult create_error = 0, start_error = 0, read_error = 0, pump_error = 0;
+inline S2KResult configure_error = 0;
+inline int starts = 0, discoveries = 0, configurations = 0, loads = 0;
+inline std::map<std::string, std::string> settings;
 inline S2KContext* context = nullptr;
 inline const auto main_thread = std::this_thread::get_id();
 inline bool exists = false, readable = true, writable = true;
@@ -50,13 +53,29 @@ inline S2KContext* s2k_create(const void*, S2KResult* result)
 }
 inline int s2k_start(S2KContext* context)
 {
+  ++Fake::starts;
   if (Fake::start_error) return Fake::start_error;
   if (context->state.stopping) return S2K_BUSY;
   context->state.running = true;
+  if (context->automatic) context->state.discovery = S2K_DISCOVERY_SCANNING;
+  return S2K_OK;
+}
+inline int s2k_set_automatic_discovery(S2KContext* context, unsigned enabled)
+{
+  assert(enabled <= 1);
+  ++Fake::configurations;
+  if (Fake::configure_error) return Fake::configure_error;
+  if (context->state.stopping) return S2K_BUSY;
+  if (context->automatic != (enabled != 0))
+  {
+    context->automatic = enabled != 0;
+    context->state.discovery = context->state.running && enabled ? S2K_DISCOVERY_SCANNING : 0;
+  }
   return S2K_OK;
 }
 inline int s2k_discover(S2KContext* context, double seconds)
 {
+  ++Fake::discoveries;
   assert(seconds == 60.0);
   context->state.discovery = S2K_DISCOVERY_SCANNING;
   return S2K_OK;
@@ -134,20 +153,32 @@ public:
     std::map<std::string, std::string> values;
     void Get(const std::string& key, std::string* value) { *value = values[key]; }
     void Set(const std::string& key, const std::string& value) { values[key] = value; }
-  } section;
+    void Get(const std::string& key, bool* value, bool fallback)
+    {
+      const auto it = values.find(key);
+      *value = it == values.end() ? fallback : it->second == "True";
+    }
+    void Set(const std::string& key, bool value) { values[key] = value ? "True" : "False"; }
+  } section, settings;
   bool Load(const std::string&)
   {
     assert(Fake::joystick_depth == 0); // Never perform config I/O under SDL's lock.
+    ++Fake::loads;
     section.values = Fake::saved;
-    return Fake::readable;
+    settings.values = Fake::settings;
+    return Fake::exists && Fake::readable;
   }
-  Section* GetOrCreateSection(const char*) { return &section; }
+  Section* GetOrCreateSection(const char* name)
+  {
+    return std::string(name) == "Settings" ? &settings : &section;
+  }
   bool Save(const std::string&)
   {
     assert(Fake::joystick_depth == 0);
     ++Fake::saves;
     if (!Fake::writable) return false;
     Fake::saved = section.values;
+    Fake::settings = settings.values;
     Fake::exists = true;
     return true;
   }

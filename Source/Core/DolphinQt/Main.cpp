@@ -20,6 +20,11 @@
 #include <QPushButton>
 #include <QWidget>
 
+#ifdef HAVE_SWITCH2KIT
+#include <QTimer>
+#include "InputCommon/ControllerInterface/SDL/Switch2Kit.h"
+#endif
+
 #include "Common/Config/Config.h"
 #include "Common/MsgHandler.h"
 #include "Common/ScopeGuard.h"
@@ -277,6 +282,12 @@ int main(int argc, char* argv[])
 
     MainWindow win{Core::System::GetInstance(), std::move(boot),
                    static_cast<const char*>(options.get("movie"))};
+
+#ifdef HAVE_SWITCH2KIT
+    // MainWindow has initialized SDL; create Bluetooth support on the main run loop.
+    // The saved opt-in is consumed once and explicit Disconnect cancels this attempt.
+    QTimer::singleShot(0, &win, [] { ciface::SDL::StartSwitch2KitAutoConnect(); });
+#endif
 
 #if defined(USE_ANALYTICS) && USE_ANALYTICS
     if (!Config::Get(Config::MAIN_ANALYTICS_PERMISSION_ASKED))
