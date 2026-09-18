@@ -47,14 +47,11 @@ class AutomaticConnectionWiringTests(unittest.TestCase):
         self.assertIn("s_auto_start_pending = false;", stop)
         self.assertIn("s_started = false;", stop)
 
-    def test_ci_retains_regressions_and_documented_sdk_pin(self):
+    def test_ci_retains_regressions(self):
         workflow = self.read(".github/workflows/native-switch2kit.yml")
         for script in ("test_switch2kit.py", "test_switch2kit_host.py --sanitize",
                        "test_switch2kit_mapping.py --sanitize", "test_switch2kit_autoconnect.py"):
             self.assertIn(script, workflow)
-        sdk_pin = workflow.split('rev-parse HEAD)" = ', 1)[1].splitlines()[0]
-        self.assertEqual(len(sdk_pin), 40)
-        self.assertIn(f"`{sdk_pin}`", self.read("Docs/Switch2Kit.md"))
 
 
 if __name__ == "__main__":

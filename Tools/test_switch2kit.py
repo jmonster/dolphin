@@ -75,24 +75,45 @@ class Switch2KitIntegrationTests(unittest.TestCase):
                               f'include("{ROOT / "CMake/DolphinSwitch2Kit.cmake"}")\n')
             subprocess.run(["cmake", "-P", str(script)], check=True, capture_output=True)
 
-    def test_unsupported_builds_fail_before_dependency(self):
-        cases = ((False, True, True, "15.0", "requires macOS"),
-                 (True, False, True, "15.0", "requires macOS"),
-                 (True, True, False, "15.0", "requires macOS"),
-                 (True, True, True, "11.0", "DEPLOYMENT_TARGET=15.0"))
-        for apple, sdl, qt, target, message in cases:
-            with self.subTest(apple=apple, sdl=sdl, qt=qt, target=target):
+    def test_platform_and_backend_configuration(self):
+        # Exercise the actual CMake guard. The probe dependency records whether
+        # SDK evaluation is reached; no message wording or documentation is tested.
+        cases = (("Linux", False, False, True, True, "11.0", False, True),
+                 ("Windows", False, True, True, True, "11.0", False, True),
+                 ("Darwin", True, False, True, True, "15.0", False, True),
+                 ("FreeBSD", False, False, True, True, "15.0", False, False),
+                 ("Linux", False, False, False, True, "15.0", False, False),
+                 ("Linux", False, False, True, False, "15.0", False, False),
+                 ("Darwin", True, False, True, True, "11.0", False, False),
+                 ("Linux", False, False, True, True, "15.0", True, False))
+        for system, apple, windows, sdl, qt, target, android, accepted in cases:
+            with self.subTest(system=system, sdl=sdl, qt=qt, target=target, android=android):
                 with tempfile.TemporaryDirectory() as directory:
-                    script = Path(directory) / "guard.cmake"
-                    values = {"ENABLE_SWITCH2KIT": "ON", "APPLE": int(apple),
+                    root = Path(directory)
+                    sdk = root / "Externals/Switch2Kit/Integrations/SDL3"
+                    sdk.mkdir(parents=True)
+                    (sdk / "probe.cpp").write_text("int probe;\n")
+                    marker = root / "sdk-entered"
+                    (sdk / "CMakeLists.txt").write_text(
+                        'add_library(inputcommon STATIC probe.cpp)\n'
+                        'add_library(Switch2Kit::SDL3 INTERFACE IMPORTED GLOBAL)\n'
+                        f'file(WRITE "{marker.as_posix()}" "entered")\n')
+                    source = root / "ControllerInterface/SDL"
+                    source.mkdir(parents=True)
+                    (source / "Switch2Kit.cpp").write_text("int host;\n")
+                    (source / "Switch2Kit.h").write_text("#pragma once\n")
+                    values = {"ENABLE_SWITCH2KIT": "ON", "APPLE": int(apple), "WIN32": int(windows),
+                              "CMAKE_SYSTEM_NAME": system, "ANDROID": int(android),
                               "ENABLE_SDL": int(sdl), "ENABLE_QT": int(qt),
                               "CMAKE_OSX_DEPLOYMENT_TARGET": target}
-                    script.write_text("cmake_minimum_required(VERSION 3.25)\n" + "".join(f"set({k} {v})\n" for k, v in values.items()) +
-                                      f'include("{ROOT / "CMake/DolphinSwitch2Kit.cmake"}")\n')
-                    result = subprocess.run(["cmake", "-P", str(script)],
+                    (root / "CMakeLists.txt").write_text(
+                        "cmake_minimum_required(VERSION 3.25)\nproject(Guard LANGUAGES CXX)\n" +
+                        "".join(f"set({key} {value})\n" for key, value in values.items()) +
+                        f'include("{(ROOT / "CMake/DolphinSwitch2Kit.cmake").as_posix()}")\n')
+                    result = subprocess.run(["cmake", "-S", str(root), "-B", str(root / "build")],
                                             capture_output=True, text=True)
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertIn(message, result.stderr)
+                    self.assertEqual(marker.exists(), accepted, result.stdout + result.stderr)
+                    self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_ordered_lifecycle_and_bundle(self):
         backend = self.read("Source/Core/InputCommon/ControllerInterface/SDL/SDL.cpp")
