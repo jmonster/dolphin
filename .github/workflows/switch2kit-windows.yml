@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   windows:
-    runs-on: windows-2022
+    runs-on: windows-2025-vs2026
     timeout-minutes: 120
     env:
       VCPKG_MAX_CONCURRENCY: 3
@@ -44,6 +44,8 @@ jobs:
           Move-Item build-switch2kit-windows "$env:RUNNER_TEMP/disabled-build-tree"
           & ./Tools/test_switch2kit_windows_launch.ps1 -Executable "$stage/Dolphin.exe"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item "$stage/User" -Recurse -Force
+          Remove-Item "$stage/portable.txt"
           Compress-Archive -Path $stage -DestinationPath 'Dolphin-Switch2Kit-windows-x86_64.zip'
       - name: Controller-enabled development application
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
