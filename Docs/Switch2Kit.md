@@ -33,9 +33,42 @@ clicks. The Pro preset matches printed Nintendo A/B/X/Y labels; + is Start, R is
 GameCube Z, and ZL/ZR provide on/off GameCube L/R. Pro triggers cannot produce
 GameCube-style variable squeeze.
 
-Open the game normally. Port bindings use Dolphin's existing settings. Use Find
-again after restarting Dolphin; merely launching the app does not scan or request
-Bluetooth permission. This is not wired GameCube USB-adapter mode.
+Open the game normally. Port bindings use Dolphin's existing settings.
+This is not wired GameCube USB-adapter mode.
+
+### Automatic connection and recovery
+
+Enable **Automatically connect Switch 2 controllers** in Controller Settings.
+This starts listening now and saves your choice for future Dolphin launches. After
+initial pairing, turn the controller on again after a long pause: Dolphin can
+rediscover it without reopening settings or pressing Find. Discovery runs on the
+SDK's Bluetooth queue, independently of emulation pause and the settings window.
+There is no repeating Find timer or 60-second limit in automatic mode.
+
+The option is off by default. With it off, Find still searches for 60 seconds,
+and merely launching Dolphin does not start Bluetooth or request permission.
+With it on, Dolphin starts once on the main run loop after SDL initialization.
+The status distinguishes continuous listening from a finite manual search.
+
+**Disconnect Switch 2 Controllers** stops input and discovery for the current
+session, even with this option checked. Polling, returning to the app, resuming a
+game or reopening settings cannot undo that explicit stop. Use Find or re-enable
+the option to resume; the saved option still applies on the next app launch.
+Unchecking the option stops automatic discovery without disconnecting ready
+controllers. A connection handshake already admitted may finish.
+
+Automatic discovery connects available **supported** controllers, not arbitrary
+Bluetooth devices and not only a saved allowlist. Close competing controller apps.
+It does not overwrite custom mappings or assign a new controller to a game port.
+The transport retains its capacity limits, serialized handshakes, duplicate-filtered
+scans and bounded retry behavior; continuous listening still uses Bluetooth radio
+resources. It cannot wake a powered-off controller or bypass initial pairing or
+Bluetooth permission.
+
+The choice is stored as `[Settings] AutoConnect` in `Switch2Kit.ini`, alongside
+but separate from physical identities. Failed reads/saves do not overwrite existing
+settings or change the runtime choice. A saved choice whose start failed remains
+visible; use Find to retry after resolving the reported problem.
 
 The controller's physical identity is assigned a persistent Dolphin device number
 in `Switch2Kit.ini` in Dolphin's user configuration directory. Reconnecting two
@@ -49,7 +82,7 @@ selected device. No controller identifiers are written to diagnostic messages.
 The backend is OFF by default. Disabled builds do not require Swift and retain
 Dolphin's existing macOS deployment target and other platforms. Enabled builds
 require macOS 15+, Xcode 26+ with Swift 6.2+, and Dolphin's normal build dependencies.
-The submodule pins Switch2Kit to `8088ce3ef6845fe90d8ff7a579e6498668bd65de`.
+The submodule pins Switch2Kit to `a9d43b1f63d94f8844755a510bf6ecc876bc8c51`.
 
 ```sh
 git submodule update --init --recursive
@@ -90,6 +123,10 @@ main run loop. The linked Swift library remains resident for process lifetime.
 `python3 Tools/test_switch2kit_mapping.py --sanitize` executes the production mapping
 helper against test-only UI/configuration boundaries, including cancellation and
 backup failures. These boundaries do not replace the code in application builds.
+`python3 Tools/test_switch2kit_host.py --sanitize` exercises the production host
+wrapper against test-only SDK/SDL/file boundaries, including automatic policy,
+saved consent, failed configuration, stable IDs, start-once and explicit stop.
+`python3 Tools/test_switch2kit_autoconnect.py` checks guarded UI/startup wiring.
 The native workflow compiles the complete application and inspects the embedded
 library and Bluetooth description. These checks do not establish physical
 controller behavior, clean-Mac startup, latency, or gameplay acceptance.
@@ -99,7 +136,13 @@ and physical rumble still need acceptance on a real NSO GameCube controller:
 pair/permission refusal and retry; every button and axis; light L/R travel without
 a click and independent full clicks; disconnect while holding input; reconnect;
 two identical controllers; app restart; normal quit; motor start/stop; and an actual game session.
-Retain the distinction between build success and these hardware results.
+Automatic recovery additionally needs a real Mac/controller test: play, pause,
+leave the controller off longer than 60 seconds, resume, and power it on without
+opening settings. Repeat several cycles, test Bluetooth off/on and two controllers
+returning in reverse order, then verify Disconnect stays stopped and disabling
+auto-connect preserves a live controller. These hardware checks have not been
+performed for this change. Retain the distinction between build success and these
+hardware results.
 
 This contribution was prepared with AI assistance. The build glue, host wrapper,
 UI integration, profile, documentation and checks require human review. The

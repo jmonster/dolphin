@@ -25,6 +25,9 @@ std::unique_ptr<Switch2Kit::SDL3Adapter> s_adapter;
 S2KContext* s_context = nullptr;
 bool s_available = false;
 bool s_started = false;
+bool s_auto_connect = false;
+bool s_auto_start_pending = false;
+S2KResult s_action_error = S2K_OK;
 S2KResult s_error = S2K_OK;
 
 // SDL callbacks run with this lock held. Always take it before our own mutex.
@@ -46,33 +49,107 @@ std::string PhysicalKey(const S2KID& id)
   }
   return key;
 }
+// Both helpers run outside the SDL/adapter lock and share the identity-file lock.
+bool LoadAutoConnect()
+{
+  const std::lock_guard settings_lock(s_settings_mutex);
+  const auto path = File::GetUserPath(D_CONFIG_IDX) + "Switch2Kit.ini";
+  Common::IniFile ini;
+  if (!ini.Load(path))
+    return false;
+  bool enabled = false;
+  ini.GetOrCreateSection("Settings")->Get("AutoConnect", &enabled, false);
+  return enabled;
+}
+
+bool SaveAutoConnect(bool enabled)
+{
+  const std::lock_guard settings_lock(s_settings_mutex);
+  const auto path = File::GetUserPath(D_CONFIG_IDX) + "Switch2Kit.ini";
+  Common::IniFile ini;
+  if (File::Exists(path) && !ini.Load(path))
+    return false;
+  ini.GetOrCreateSection("Settings")->Set("AutoConnect", enabled);
+  return ini.Save(path);
+}
+
+// Caller holds s_mutex and is on the main thread. Never called from input polling.
+int StartSwitch2KitLocked()
+{
+  if (!s_available)
+    return s_action_error = S2K_NOT_READY;
+  // Creation/permission presentation belongs to the main run loop, even when
+  // startup was explicitly authorized by a preference from a previous launch.
+  if (!s_context)
+    s_context = s2k_create(nullptr, &s_action_error);
+  if (!s_context)
+    return s_action_error;
+  s_action_error = s2k_set_automatic_discovery(s_context, s_auto_connect ? 1 : 0);
+  if (s_action_error != S2K_OK)
+    return s_action_error;
+  s_action_error = s2k_start(s_context);
+  if (s_action_error == S2K_OK)
+  {
+    s_started = true;
+    if (!s_auto_connect)
+      s_action_error = s2k_discover(s_context, 60.0);
+  }
+  return s_action_error;
+}
 }  // namespace
 
 void InitializeSwitch2Kit()
 {
+  const bool auto_connect = LoadAutoConnect();
   const std::lock_guard lock(s_mutex);
   s_available = true;
+  s_auto_connect = auto_connect;
+  s_auto_start_pending = auto_connect;
+  s_action_error = S2K_OK;
   s_error = S2K_OK;
 }
 
 int FindSwitch2Controllers()
 {
   const std::lock_guard lock(s_mutex);
-  if (!s_available)
-    return S2K_NOT_READY;
-  // Creation is deliberately deferred to the main-thread GUI action. Creating
-  // the SDL backend on a worker thread must never create a Bluetooth manager.
-  if (!s_context)
-    s_context = s2k_create(nullptr, &s_error);
-  if (!s_context)
-    return s_error;
-  s_error = s2k_start(s_context);
-  if (s_error == S2K_OK)
+  s_auto_start_pending = false;
+  return StartSwitch2KitLocked();
+}
+
+int StartSwitch2KitAutoConnect()
+{
+  const std::lock_guard lock(s_mutex);
+  if (!s_auto_start_pending)
+    return S2K_OK;
+  s_auto_start_pending = false;
+  if (!s_auto_connect || s_started)
+    return S2K_OK;
+  // One startup attempt only. A failure remains visible and Find can retry it.
+  return StartSwitch2KitLocked();
+}
+
+int SetSwitch2KitAutoConnect(bool enabled)
+{
   {
-    s_started = true;
-    s_error = s2k_discover(s_context, 60.0);
+    const std::lock_guard lock(s_mutex);
+    if (!s_available)
+      return S2K_NOT_READY;
   }
-  return s_error;
+  // Preserve every existing section and fail without changing the preference
+  // or radio policy if configuration cannot be read/saved.
+  if (!SaveAutoConnect(enabled))
+  {
+    const std::lock_guard lock(s_mutex);
+    return s_action_error = S2K_INTERNAL_ERROR;
+  }
+  const std::lock_guard lock(s_mutex);
+  s_auto_connect = enabled;
+  s_auto_start_pending = false;
+  if (enabled)
+    return StartSwitch2KitLocked();
+  // Disabling discovery retains ready controllers and their current mappings.
+  s_action_error = s_context && s_started ? s2k_set_automatic_discovery(s_context, 0) : S2K_OK;
+  return s_action_error;
 }
 
 void UpdateSwitch2Kit()
@@ -93,11 +170,14 @@ void StopSwitch2Controllers()
   const JoystickLock joystick_lock;
   const std::lock_guard lock(s_mutex);
   // Keep subsequent input polls from recreating the adapter while stopped or
-  // while asynchronous Bluetooth teardown is still completing. Only Find starts it.
+  // while asynchronous Bluetooth teardown is still completing. Explicit Find or
+  // enabling Auto-connect can restart it; a deferred startup callback cannot.
+  s_auto_start_pending = false;
   s_started = false;
   s_adapter.reset();
+  s_error = S2K_OK;
   if (s_context)
-    s_error = s2k_stop(s_context);
+    s_action_error = s2k_stop(s_context);
   // Stop is asynchronous. Never block the main run loop waiting for teardown.
 }
 
@@ -107,6 +187,9 @@ void ShutdownSwitch2Kit()
   const std::lock_guard lock(s_mutex);
   s_available = false;
   s_started = false;
+  s_auto_start_pending = false;
+  s_auto_connect = false;
+  s_action_error = S2K_OK;
   // Destroy SDL devices before their borrowed C context and before SDL_Quit.
   s_adapter.reset();
   if (s_context)
@@ -123,7 +206,8 @@ Switch2KitStatus GetSwitch2KitStatus()
   const std::lock_guard lock(s_mutex);
   Switch2KitStatus status;
   status.available = s_available;
-  status.error = s_error;
+  status.auto_connect = s_auto_connect;
+  status.error = s_action_error != S2K_OK ? s_action_error : s_error;
   if (!s_context)
     return status;
   S2KSnapshot snapshot{};
