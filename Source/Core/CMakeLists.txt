@@ -19,6 +19,16 @@ if(ENABLE_QT)
   add_subdirectory(DolphinQt)
 endif()
 
+if(ENABLE_SWITCH2KIT AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Each installed executable that links inputcommon needs the facade's relative
+  # runtime path, not just the GUI. The library is installed by the SDK helper.
+  foreach(_host dolphin-emu dolphin-nogui dolphin-tool)
+    if(TARGET "${_host}")
+      switch2kit_install_linux("${_host}")
+    endif()
+  endforeach()
+endif()
+
 if (APPLE OR WIN32)
   add_subdirectory(UpdaterCommon)
 endif()
