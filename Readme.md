@@ -87,7 +87,7 @@ Please read the [FAQ](https://dolphin-emu.org/docs/faq/) before using Dolphin.
     * A modern CPU (3 GHz and Dual Core, not older than 2008) is highly recommended.
 * Graphics
     * A reasonably modern graphics card (Direct3D 11.1 / OpenGL 3.3).
-    * A graphics card that supports Direct3D 11.1 / OpenGL 4.4 is recommended for best performance.
+    * A graphics card that supports Direct3D 11.1 / OpenGL 4.4 is recommended.
 
 ### Android
 
@@ -207,9 +207,9 @@ Options:
                         Suggested value for RVZ: 131072 (128 KiB)
   -c COMPRESSION, --compression=COMPRESSION
                         Compression method to use when converting to WIA/RVZ.
-                        Suggested value for zstd: 5
-  -l, --compression_level
-                        Compression level for the selected method. Ignored
+                        Suggested value for RVZ: zstd [none|zstd|bzip|lzma|lzma2]
+  -l COMPRESSION_LEVEL, --compression_level=COMPRESSION_LEVEL
+                        Level of compression for the selected method. Ignored
                         if 'none'. Suggested value for zstd: 5
 ```
 
@@ -235,9 +235,9 @@ Options:
   -h, --help            show this help message and exit
   -i FILE, --input=FILE
                         Path to disc image FILE.
-  -b, --block_size      Optional. Print the block size of GCZ/WIA/RVZ
-                        formats, then exit.
-  -c, --compression    Optional. Print the compression method of GCZ/WIA/RVZ
+  -b, --block_size      Optional. Print the block size of GCZ/WIA/RVZ formats,
+then exit.
+  -c, --compression     Optional. Print the compression method of GCZ/WIA/RVZ
                         formats, then exit.
   -l, --compression_level
                         Optional. Print the level of compression for WIA/RVZ
