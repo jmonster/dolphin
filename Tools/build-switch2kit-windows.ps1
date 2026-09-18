@@ -10,8 +10,11 @@ foreach ($tool in @('git', 'cmake', 'ninja', 'swift', 'swiftc')) {
 }
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path $vswhere)) { throw 'Install Visual Studio 2022 Desktop development with C++ and a Windows SDK.' }
-$vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-if (-not $vs) { throw 'Visual C++ x64 tools were not found.' }
+# Swift 6.2.1 bundles Clang 19. VS 2026's STL requires Clang 20 or newer.
+# Select VS 2022 explicitly, including on hosts with both versions installed.
+$vs = & $vswhere -latest -version '[17.0,18.0)' -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if ($LASTEXITCODE -ne 0 -or -not $vs) { throw 'Visual Studio 2022 C++ x64 tools were not found. Install the Desktop development with C++ workload and a Windows SDK; VS 2026 is not compatible with Swift 6.2.1.' }
+Write-Host "Using Visual Studio 2022: $vs"
 cmd /c "`"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 -host_arch=x64 >nul && set" | ForEach-Object {
     if ($_ -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process') }
 }
