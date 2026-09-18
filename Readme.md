@@ -1,5 +1,70 @@
 # Dolphin - A GameCube and Wii Emulator
 
+**This fork supports the Nintendo Switch Online GameCube controller and Nintendo Switch 2 Pro Controller on macOS through [Switch2Kit](https://github.com/jmonster/Switch2Kit).**
+
+Controller support is built into Dolphin. There is no separate Switch2Kit app or controller driver to install, and GameCube/Pro controller setup includes recommended mappings and rumble.
+
+## Quick start (macOS 15+)
+
+### Get a controller-enabled build
+
+1. Sign in to GitHub, open this fork's [Native Switch2Kit builds](https://github.com/jmonster/dolphin/actions/workflows/native-switch2kit.yml), and select a successful run with a green check.
+2. Under **Artifacts**, download **Dolphin-Switch2Kit-arm64** for an Apple Silicon Mac or **Dolphin-Switch2Kit-x86_64** for an Intel Mac. Choose the application artifact, not a diagnostics or SDK-test artifact.
+3. Extract the downloaded ZIP, then extract the **Dolphin-Switch2Kit-arm64.zip** or **Dolphin-Switch2Kit-x86_64.zip** inside it. Move **DolphinQt.app** to Applications and open it. Reopen this same app for later sessions.
+
+Downloads currently come from GitHub Actions, not a published release. Artifacts expire; when no application download is available, use [Build from source](#build-from-source-alternative) below. Ordinary upstream Dolphin downloads do not include this Switch2Kit integration.
+
+These are development builds, not notarized releases. For an unverified-developer warning, use Apple's [per-app Open Anyway instructions](https://support.apple.com/en-us/102445) only when you trust the download's source. Do not disable Gatekeeper globally.
+
+### Connect and play
+
+1. Turn on your Mac's Bluetooth and close other apps managing the controller, including the Switch2Kit dashboard or Cemu. In Dolphin, open **Controllers** (Controller Settings), click **Find Switch 2 Controllers**, allow Bluetooth access, and hold the controller's **Sync** button until its player lights sweep. The search lasts 60 seconds; click Find again to retry.
+2. Beside the desired **GameCube port**, choose **Switch2Kit GameCube** or **Switch2Kit Pro Controller 2** in the physical-controller dropdown. Dolphin selects **Standard Controller** and applies the button, stick, trigger, and rumble mappings automatically. This is not **GameCube Adapter for Wii U** mode.
+3. Open that port's **Configure** window to check button presses and releases, sticks, and triggers, then open your GameCube game. On the NSO GameCube controller, partial L/R travel and the full-click buttons are separate inputs. Pro Controller ZL/ZR are on/off and cannot reproduce an analog squeeze.
+
+For automatic reconnection on later launches or after a long pause, enable **Automatically connect Switch 2 controllers** in Controller Settings and turn the controller on when you return. This option is off by default; otherwise use **Find Switch 2 Controllers** each session. **Disconnect Switch 2 Controllers** stops the current session without deleting mappings.
+
+For Wii games, configure an **Emulated Wii Remote** and its SDL device through Dolphin's normal Wii Remote settings; the GameCube-port shortcut above does not configure a Wii Remote or add calibrated Wii motion. Individual Joy-Con 2 halves also need normal manual bindings.
+
+**No Find button?** Open the controller-enabled app above, not an upstream or backend-disabled build. **No controller?** Check Bluetooth access for Dolphin in **System Settings > Privacy & Security > Bluetooth**, close competing controller apps, and retry Find while holding Sync. Saved custom mappings are not replaced on reconnect; **Use Recommended Mapping** in Configure is the explicit reset-to-preset action.
+
+### Build from source (alternative)
+
+<details>
+<summary>Build and launch the controller-enabled app on your Mac</summary>
+
+Use macOS 15+, [Xcode](https://developer.apple.com/xcode/) 26+ with Swift 6.2+, and [Homebrew](https://brew.sh/). Open Xcode once to finish setup and select it under **Xcode > Settings > Locations > Command Line Tools**. On Apple Silicon, use a native Terminal and native Homebrew, not Rosetta.
+
+Run these commands in Terminal:
+
+```sh
+brew install cmake ninja nasm automake libtool qt@6
+git clone --recurse-submodules https://github.com/jmonster/dolphin.git dolphin-switch2kit
+cd dolphin-switch2kit
+cmake -S . -B build-switch2kit -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+  -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
+  -DENABLE_SWITCH2KIT=ON -DENABLE_SDL=ON -DENABLE_QT=ON \
+  -DUSE_SYSTEM_SDL3=OFF \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+  -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON
+cmake --build build-switch2kit --target dolphin-emu --parallel 3
+open build-switch2kit/Binaries/DolphinQt.app
+```
+
+This follows the native workflow's build options, including using OpenGL rather than Vulkan. The clone includes the pinned Switch2Kit dependency; do not apply the SDK's separate emulator patches to this fork. The resulting app is **build-switch2kit/Binaries/DolphinQt.app**. Once it opens, follow [Connect and play](#connect-and-play).
+
+For later launches, reopen that app. The usual upstream build instructions below leave `ENABLE_SWITCH2KIT` off unless you explicitly enable it.
+
+</details>
+
+See the [full Switch2Kit controller guide](Docs/Switch2Kit.md) for custom mappings, profile backups, multiplayer, rumble, reconnection, and testing limits. Automated build/launch checks do not establish physical-controller or gameplay acceptance. Switch2Kit support in this fork is macOS-only; the SDK's experimental Linux work is separate.
+
+## Upstream Dolphin documentation
+
+The information below describes Dolphin generally, including builds without this fork's Switch2Kit feature. Controller-enabled builds have the macOS 15+ requirements above.
+
 [Homepage](https://dolphin-emu.org/) | [Project Site](https://github.com/dolphin-emu/dolphin) | [Buildbot](https://dolphin.ci/) | [Forums](https://forums.dolphin-emu.org/) | [Wiki](https://wiki.dolphin-emu.org/) | [GitHub Wiki](https://github.com/dolphin-emu/dolphin/wiki) | [Issue Tracker](https://bugs.dolphin-emu.org/projects/emulator/issues) | [Coding Style](https://github.com/dolphin-emu/dolphin/blob/master/Contributing.md) | [Transifex Page](https://app.transifex.com/dolphinemu/dolphin-emu/dashboard/) | [Analytics](https://mon.dolphin-emu.org/)
 
 Dolphin is an emulator for running GameCube and Wii games on Windows,
@@ -22,7 +87,7 @@ Please read the [FAQ](https://dolphin-emu.org/docs/faq/) before using Dolphin.
     * A modern CPU (3 GHz and Dual Core, not older than 2008) is highly recommended.
 * Graphics
     * A reasonably modern graphics card (Direct3D 11.1 / OpenGL 3.3).
-    * A graphics card that supports Direct3D 11.1 / OpenGL 4.4 is recommended.
+    * A graphics card that supports Direct3D 11.1 / OpenGL 4.4 is recommended for best performance.
 
 ### Android
 
@@ -142,9 +207,9 @@ Options:
                         Suggested value for RVZ: 131072 (128 KiB)
   -c COMPRESSION, --compression=COMPRESSION
                         Compression method to use when converting to WIA/RVZ.
-                        Suggested value for RVZ: zstd [none|zstd|bzip|lzma|lzma2]
-  -l COMPRESSION_LEVEL, --compression_level=COMPRESSION_LEVEL
-                        Level of compression for the selected method. Ignored
+                        Suggested value for zstd: 5
+  -l, --compression_level
+                        Compression level for the selected method. Ignored
                         if 'none'. Suggested value for zstd: 5
 ```
 
@@ -170,9 +235,9 @@ Options:
   -h, --help            show this help message and exit
   -i FILE, --input=FILE
                         Path to disc image FILE.
-  -b, --block_size      Optional. Print the block size of GCZ/WIA/RVZ formats,
-then exit.
-  -c, --compression     Optional. Print the compression method of GCZ/WIA/RVZ
+  -b, --block_size      Optional. Print the block size of GCZ/WIA/RVZ
+                        formats, then exit.
+  -c, --compression    Optional. Print the compression method of GCZ/WIA/RVZ
                         formats, then exit.
   -l, --compression_level
                         Optional. Print the level of compression for WIA/RVZ
