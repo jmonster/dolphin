@@ -82,7 +82,7 @@ selected device. No controller identifiers are written to diagnostic messages.
 The backend is OFF by default. Disabled builds do not require Swift and retain
 Dolphin's existing macOS deployment target and other platforms. Enabled builds
 require macOS 15+, Xcode 26+ with Swift 6.2+, and Dolphin's normal build dependencies.
-The submodule pins Switch2Kit to `ef26a17eb018ab6db6c944c33153ced332e2de91`.
+The submodule pins Switch2Kit to `a9d43b1f63d94f8844755a510bf6ecc876bc8c51`.
 
 ```sh
 git submodule update --init --recursive

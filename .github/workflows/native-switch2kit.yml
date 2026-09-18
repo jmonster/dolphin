@@ -77,7 +77,7 @@ jobs:
         run: brew install cmake ninja nasm automake libtool qt@6
       - name: Check source pin and integration
         run: |
-          test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = ef26a17eb018ab6db6c944c33153ced332e2de91
+          test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = a9d43b1f63d94f8844755a510bf6ecc876bc8c51
           python3 Tools/test_switch2kit.py
           python3 Tools/test_switch2kit_autoconnect.py
           python3 Tools/test_switch2kit_host.py --sanitize
