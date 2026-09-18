@@ -115,6 +115,34 @@ class Switch2KitIntegrationTests(unittest.TestCase):
                     self.assertEqual(marker.exists(), accepted, result.stdout + result.stderr)
                     self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
+    def test_windows_ci_uses_swift_compatible_runner(self):
+        workflow = self.read(".github/workflows/switch2kit-windows.yml")
+        # Swift 6.2.1 uses Clang 19; VS 2026's STL requires Clang 20.
+        # Keep these pins paired until a newer toolchain is qualified together.
+        self.assertIn("    runs-on: windows-2022\n", workflow)
+        self.assertIn("swift-version: swift-6.2.1-release", workflow)
+        self.assertIn("swift-build: 6.2.1-RELEASE", workflow)
+
+    def test_windows_build_selects_only_visual_studio_2022(self):
+        script = self.read("Tools/build-switch2kit-windows.ps1")
+        selection = next(line for line in script.splitlines()
+                         if line.startswith("$vs = & $vswhere "))
+        self.assertIn("-version '[17.0,18.0)'", selection)
+        self.assertIn("-requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64", selection)
+        self.assertIn("if ($LASTEXITCODE -ne 0 -or -not $vs) { throw", script)
+        self.assertLess(script.index(selection), script.index("VsDevCmd.bat"))
+
+    def test_windows_fix_keeps_native_build_and_launch_required(self):
+        script = self.read("Tools/build-switch2kit-windows.ps1")
+        workflow = self.read(".github/workflows/switch2kit-windows.yml")
+        self.assertIn("-DENABLE_SWITCH2KIT=ON", script)
+        self.assertIn("--target dolphin-emu", script)
+        self.assertIn("Switch2KitC.dll", script)
+        self.assertIn("./Tools/build-switch2kit-windows.ps1", workflow)
+        self.assertIn("./Tools/test_switch2kit_windows_launch.ps1", workflow)
+        self.assertNotIn("continue-on-error", workflow)
+        self.assertNotIn("_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH", script + workflow)
+
     def test_ordered_lifecycle_and_bundle(self):
         backend = self.read("Source/Core/InputCommon/ControllerInterface/SDL/SDL.cpp")
         self.assertLess(backend.index("ShutdownSwitch2Kit();"), backend.index("SDL_Quit();"))
