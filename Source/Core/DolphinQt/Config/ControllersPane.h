@@ -5,6 +5,7 @@
 
 #include <QWidget>
 
+class QGroupBox;
 class WiimoteControllersWidget;
 
 class ControllersPane final : public QWidget
@@ -15,6 +16,9 @@ public:
 
 private:
   void CreateMainLayout();
+#ifdef HAVE_SWITCH2KIT
+  QGroupBox* CreateSwitch2ControllersBox();
+#endif
 
   WiimoteControllersWidget* m_wiimote_controllers;
 };

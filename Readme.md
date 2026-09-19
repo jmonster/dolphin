@@ -18,11 +18,11 @@ These are development builds, not notarized releases. For an unverified-develope
 
 ### Connect and play
 
-1. Turn on your Mac's Bluetooth and close other apps managing the controller, including the Switch2Kit dashboard or Cemu. In Dolphin, open **Controllers** (Controller Settings), click **Find Switch 2 Controllers**, allow Bluetooth access, and hold the controller's **Sync** button until its player lights sweep. The search lasts 60 seconds; click Find again to retry.
+1. Turn on your Mac's Bluetooth and close other apps managing the controller, including the Switch2Kit dashboard or Cemu. In Dolphin, open **Controllers** (Controller Settings). In the **Switch 2 Controllers** section, click **Find Controllers**, allow Bluetooth access, and hold the controller's **Sync** button until its player lights sweep. The search lasts 60 seconds; click Find again to retry.
 2. Beside the desired **GameCube port**, choose **Switch2Kit GameCube** or **Switch2Kit Pro Controller 2** in the physical-controller dropdown. Dolphin selects **Standard Controller** and applies the button, stick, trigger, and rumble mappings automatically. This is not **GameCube Adapter for Wii U** mode.
 3. Open that port's **Configure** window to check button presses and releases, sticks, and triggers, then open your GameCube game. On the NSO GameCube controller, partial L/R travel and the full-click buttons are separate inputs. Pro Controller ZL/ZR are on/off and cannot reproduce an analog squeeze.
 
-For automatic reconnection on later launches or after a long pause, enable **Automatically connect Switch 2 controllers** in Controller Settings and turn the controller on when you return. This option is off by default; otherwise use **Find Switch 2 Controllers** each session. **Disconnect Switch 2 Controllers** stops the current session without deleting mappings.
+For automatic reconnection on later launches or after a long pause, enable **Automatically connect** in the **Switch 2 Controllers** section and turn the controller on when you return. This option is off by default; otherwise use **Find Controllers** each session. **Disconnect All** in that section stops the current session without deleting mappings.
 
 For Wii games, configure an **Emulated Wii Remote** and its SDL device through Dolphin's normal Wii Remote settings; the GameCube-port shortcut above does not configure a Wii Remote or add calibrated Wii motion. Individual Joy-Con 2 halves also need normal manual bindings.
 
