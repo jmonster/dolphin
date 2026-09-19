@@ -1,0 +1,35 @@
+name: Switch2Kit desktop platforms
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: switch2kit-desktop-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Initialize the pinned controller SDK and SDL
+        run: git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
+      - name: Archive the exact sources used by the controller integration
+        run: |
+          mkdir -p "$RUNNER_TEMP/switch2kit-source"
+          git archive HEAD -o "$RUNNER_TEMP/switch2kit-source/host.zip"
+          git -C Externals/Switch2Kit archive HEAD -o "$RUNNER_TEMP/switch2kit-source/sdk.zip"
+          git -C Externals/SDL/SDL archive HEAD -o "$RUNNER_TEMP/switch2kit-source/sdl.zip"
+          {
+            git rev-parse HEAD
+            git submodule status Externals/Switch2Kit Externals/SDL/SDL
+          } > "$RUNNER_TEMP/switch2kit-source/revisions.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Switch2Kit-desktop-source
+          path: ${{ runner.temp }}/switch2kit-source
+          retention-days: 7
+          if-no-files-found: error

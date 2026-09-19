@@ -19,6 +19,50 @@ if(ENABLE_QT)
   add_subdirectory(DolphinQt)
 endif()
 
+if(ENABLE_SWITCH2KIT)
+  if(NOT APPLE)
+    target_sources(dolphin-emu PRIVATE
+      DolphinQt/Config/Mapping/Switch2KitMapping.cpp
+      DolphinQt/Config/Mapping/Switch2KitMapping.h)
+  endif()
+  if(WIN32)
+    # These C++ hosts share one runtime directory and one Swift product: the
+    # facade. Stage its complete compiler-selected runtime closure before the
+    # child-directory executables link; copying the facade alone requires a
+    # developer Swift installation at launch. Other host DLLs remain owned by
+    # their existing deployment rules and the extracted GUI qualification.
+    add_custom_target(switch2kit-windows-runtime
+      COMMAND "${CMAKE_COMMAND}"
+        "-DS2K_LIBRARY=$<TARGET_FILE:Switch2Kit::C>"
+        "-DS2K_DESTINATION=$<TARGET_FILE_DIR:dolphin-emu>"
+        "-DS2K_NOTICES=$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices"
+        "-DS2K_RUNTIME_CONFIG=${SWITCH2KIT_RUNTIME_CONFIG}"
+        -P "${SWITCH2KIT_RUNTIME_SCRIPT}"
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices"
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${PROJECT_SOURCE_DIR}/Externals/Switch2Kit/CREDITS.md"
+        "$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices/CREDITS.md"
+      COMMAND "${CMAKE_COMMAND}" -E copy_directory "${PROJECT_SOURCE_DIR}/Externals/Switch2Kit/LICENSES"
+        "$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices/LICENSES"
+      DEPENDS Switch2KitCBuild VERBATIM)
+    foreach(_host dolphin-emu dolphin-nogui dolphin-tool)
+      if(TARGET "${_host}")
+        add_dependencies("${_host}" switch2kit-windows-runtime)
+      endif()
+    endforeach()
+  endif()
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # File::GetSysDirectory prefers Sys beside the executable. Install an
+    # application-owned copy so a relocated prefix never needs the build-time
+    # absolute datadir. Ordinary feature-disabled installation is unchanged.
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/Data/Sys" DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    foreach(_host dolphin-emu dolphin-nogui dolphin-tool)
+      if(TARGET "${_host}")
+        switch2kit_install_linux("${_host}")
+      endif()
+    endforeach()
+  endif()
+endif()
+
 if (APPLE OR WIN32)
   add_subdirectory(UpdaterCommon)
 endif()
