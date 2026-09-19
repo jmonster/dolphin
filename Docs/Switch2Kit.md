@@ -10,8 +10,9 @@ Switch2Kit's in-process virtual gamepads. No console emulation code is changed.
 
 Use a Dolphin application built with this option (not an ordinary upstream build).
 Close other applications that are managing the same controller. In Dolphin's
-Controller Settings, click **Find Switch 2 Controllers**, allow Bluetooth access,
-and hold Sync on the wireless controller. Discovery lasts 60 seconds.
+Controller Settings, find the **Switch 2 Controllers** section above **Common**.
+Click **Find Controllers**, allow Bluetooth access, and hold Sync on the wireless
+controller. Discovery lasts 60 seconds.
 
 Choose the connected **Switch2Kit GameCube** or **Switch2Kit Pro Controller 2**
 in the physical-controller dropdown beside the desired GameCube port. This selects
@@ -20,6 +21,10 @@ in the physical-controller dropdown beside the desired GameCube port. This selec
 can be assigned to only one active Standard Controller port through this shortcut;
 set its old port to None before moving it. Other controller types and backends
 continue to use Configure normally.
+
+Pairing stays separate from the emulated controller type: **Standard Controller**
+is what the game sees, while the adjacent dropdown selects the physical input
+device. Changing the type does not start Bluetooth discovery.
 
 In **Configure**, **Use Recommended Mapping** applies the same mapping to the
 selected supported device. It is explicit: selecting a device, refreshing the list,
@@ -38,7 +43,7 @@ This is not wired GameCube USB-adapter mode.
 
 ### Automatic connection and recovery
 
-Enable **Automatically connect Switch 2 controllers** in Controller Settings.
+Enable **Automatically connect** in the **Switch 2 Controllers** section.
 This starts listening now and saves your choice for future Dolphin launches. After
 initial pairing, turn the controller on again after a long pause: Dolphin can
 rediscover it without reopening settings or pressing Find. Discovery runs on the
@@ -50,7 +55,7 @@ and merely launching Dolphin does not start Bluetooth or request permission.
 With it on, Dolphin starts once on the main run loop after SDL initialization.
 The status distinguishes continuous listening from a finite manual search.
 
-**Disconnect Switch 2 Controllers** stops input and discovery for the current
+**Disconnect All** in that section stops input and discovery for the current
 session, even with this option checked. Polling, returning to the app, resuming a
 game or reopening settings cannot undo that explicit stop. Use Find or re-enable
 the option to resume; the saved option still applies on the next app launch.
