@@ -8,13 +8,24 @@ Controller support is built into Dolphin. There is no separate Switch2Kit app or
 
 ### Get a controller-enabled build
 
-1. Sign in to GitHub, open this fork's [Native Switch2Kit builds](https://github.com/jmonster/dolphin/actions/workflows/native-switch2kit.yml), and select a successful run with a green check.
-2. Under **Artifacts**, download **Dolphin-Switch2Kit-arm64** for an Apple Silicon Mac or **Dolphin-Switch2Kit-x86_64** for an Intel Mac. Choose the application artifact, not a diagnostics or SDK-test artifact.
-3. Extract the downloaded ZIP, then extract the **Dolphin-Switch2Kit-arm64.zip** or **Dolphin-Switch2Kit-x86_64.zip** inside it. Move **DolphinQt.app** to Applications and open it. Reopen this same app for later sessions.
-
-Downloads currently come from GitHub Actions, not a published release. Artifacts expire; when no application download is available, use [Build from source](#build-from-source-alternative) below. Ordinary upstream Dolphin downloads do not include this Switch2Kit integration.
-
-These are development builds, not notarized releases. For an unverified-developer warning, use Apple's [per-app Open Anyway instructions](https://support.apple.com/en-us/102445) only when you trust the download's source. Do not disable Gatekeeper globally.
+1. git clone this repo
+2. 
+```sh
+cmake -S . -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+    -DENABLE_SWITCH2KIT=ON \
+    -DENABLE_SDL=ON \
+    -DENABLE_QT=ON \
+    -DUSE_SYSTEM_SDL3=OFF \
+    -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+    -DENABLE_VULKAN=OFF \
+    -DENABLE_TESTS=OFF \
+    -DPOSTPROCESS_BUNDLE=ON &&
+cmake --build build --target dolphin-emu --parallel 8
+```
+3. Move **build/Binaries/DolphinQt.app** to Applications and open it. Reopen this same app for later sessions.
+4. Open Settings, Controller and turn on Switch2 controller finding.
 
 ### Connect and play
 
@@ -26,14 +37,14 @@ For automatic reconnection on later launches or after a long pause, enable **Aut
 
 For Wii games, configure an **Emulated Wii Remote** and its SDL device through Dolphin's normal Wii Remote settings; the GameCube-port shortcut above does not configure a Wii Remote or add calibrated Wii motion. Individual Joy-Con 2 halves also need normal manual bindings.
 
-**No Find button?** Open the controller-enabled app above, not an upstream or backend-disabled build. **No controller?** Check Bluetooth access for Dolphin in **System Settings > Privacy & Security > Bluetooth**, close competing controller apps, and retry Find while holding Sync. Saved custom mappings are not replaced on reconnect; **Use Recommended Mapping** in Configure is the explicit reset-to-preset action.
+**No Find button?** Open the controller-enabled app above. **No controller?** Check Bluetooth access for Dolphin in **System Settings > Privacy & Security > Bluetooth**, close competing controller apps, and retry Find while holding Sync. Saved custom mappings are not replaced on reconnect; **Use Recommended Mapping** in Configure is the explicit reset-to-preset action.
 
 ### Build from source (alternative)
 
 <details>
 <summary>Build and launch the controller-enabled app on your Mac</summary>
 
-Use macOS 15+, [Xcode](https://developer.apple.com/xcode/) 26+ with Swift 6.2+, and [Homebrew](https://brew.sh/). Open Xcode once to finish setup and select it under **Xcode > Settings > Locations > Command Line Tools**. On Apple Silicon, use a native Terminal and native Homebrew, not Rosetta.
+Use macOS 15+, [Xcode](https://developer.apple.com/xcode/) 26+ with Swift 6.2+, and [Homebrew](https://brew.sh/). Open Xcode once to finish setup and select it under **Xcode > Settings > Locations > Command Line Tools**. On Apple Silicon, use a native Terminal and native Homebrew; avoid Rosetta.
 
 Run these commands in Terminal:
 
