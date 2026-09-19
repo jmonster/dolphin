@@ -68,3 +68,46 @@ jobs:
             linux-*.log
             linux-launch.json
           retention-days: 7
+
+  disabled:
+    # A complete ordinary application build in an image without Swift. This is
+    # not a controller-enabled artifact and does not use the SDK build helper.
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    timeout-minutes: 90
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install ordinary native dependencies without Swift
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus
+          if command -v swift || command -v swiftc; then
+            echo 'The backend-disabled qualification image must not contain Swift.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Build the complete application with Switch2Kit disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$PWD"
+          cmake -S . -B build-disabled -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_SWITCH2KIT=OFF -DENABLE_SDL=ON -DENABLE_QT=ON \
+            -DUSE_SYSTEM_SDL3=OFF -DENABLE_TESTS=OFF -DENABLE_VULKAN=OFF \
+            -DENABLE_AUTOUPDATE=OFF 2>&1 | tee disabled-configure.log
+          cmake --build build-disabled --target dolphin-emu --parallel 3 2>&1 | tee disabled-build.log
+          ldd build-disabled/Binaries/dolphin-emu | tee disabled-dependencies.log
+          ! grep -q 'not found' disabled-dependencies.log
+          ! grep -Ei 'Switch2Kit|libswift|libFoundation|libdispatch|libBlocksRuntime' disabled-dependencies.log
+          build-disabled/Binaries/dolphin-emu --version
+      - name: Backend-disabled build diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Dolphin-without-Switch2Kit-linux-diagnostics
+          path: disabled-*.log
+          retention-days: 7
