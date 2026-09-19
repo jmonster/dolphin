@@ -38,16 +38,16 @@ jobs:
           robocopy 'build-switch2kit-windows/Binaries' $stage /E /NFL /NDL /NJH /NJS
           if ($LASTEXITCODE -ge 8) { throw 'Application staging failed.' }
           $global:LASTEXITCODE = 0
-          # A fresh portable test profile suppresses the first-run analytics question.
-          New-Item -ItemType Directory -Path "$stage/User/Config" -Force | Out-Null
-          Set-Content "$stage/portable.txt" ''
-          Set-Content "$stage/User/Config/Dolphin.ini" "[Analytics]`nEnabled = False`nPermissionAsked = True`n[AutoUpdate]`nUpdateTrack ="
+          # Never distribute a developer/test profile. The supervisor seeds only
+          # its private extracted copy, after the distributable archive is made.
+          foreach ($profile in @('User', 'user', 'portable', 'portable.txt', 'settings.xml')) {
+            if (Test-Path (Join-Path $stage $profile)) { throw "Unexpected profile in application staging: $profile" }
+          }
           Move-Item build-switch2kit-windows "$env:RUNNER_TEMP/disabled-build-tree"
-          & ./Tools/test_switch2kit_windows_launch.ps1 -Executable "$stage/Dolphin.exe"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Remove-Item "$stage/User" -Recurse -Force
-          Remove-Item "$stage/portable.txt"
           Compress-Archive -Path $stage -DestinationPath 'Dolphin-Switch2Kit-windows-x86_64.zip'
+          Move-Item $stage "$env:RUNNER_TEMP/unavailable-staged-application"
+          & ./Tools/test_switch2kit_windows_launch.ps1 -Archive 'Dolphin-Switch2Kit-windows-x86_64.zip' -ForbiddenRoot "$PWD"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Controller-enabled development application
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

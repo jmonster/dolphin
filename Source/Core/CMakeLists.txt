@@ -26,12 +26,18 @@ if(ENABLE_SWITCH2KIT)
       DolphinQt/Config/Mapping/Switch2KitMapping.h)
   endif()
   if(WIN32)
-    # The executables live in child directories and share one runtime directory.
-    # Stage the native DLL once before linking any of them (not a global install).
+    # These C++ hosts share one runtime directory and one Swift product: the
+    # facade. Stage its complete compiler-selected runtime closure before the
+    # child-directory executables link; copying the facade alone requires a
+    # developer Swift installation at launch. Other host DLLs remain owned by
+    # their existing deployment rules and the extracted GUI qualification.
     add_custom_target(switch2kit-windows-runtime
-      COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:dolphin-emu>"
-      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-        "$<TARGET_FILE:Switch2Kit::C>" "$<TARGET_FILE_DIR:dolphin-emu>"
+      COMMAND "${CMAKE_COMMAND}"
+        "-DS2K_LIBRARY=$<TARGET_FILE:Switch2Kit::C>"
+        "-DS2K_DESTINATION=$<TARGET_FILE_DIR:dolphin-emu>"
+        "-DS2K_NOTICES=$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices"
+        "-DS2K_RUNTIME_CONFIG=${SWITCH2KIT_RUNTIME_CONFIG}"
+        -P "${SWITCH2KIT_RUNTIME_SCRIPT}"
       COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices"
       COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${PROJECT_SOURCE_DIR}/Externals/Switch2Kit/CREDITS.md"
         "$<TARGET_FILE_DIR:dolphin-emu>/Switch2KitNotices/CREDITS.md"
@@ -45,6 +51,10 @@ if(ENABLE_SWITCH2KIT)
     endforeach()
   endif()
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # File::GetSysDirectory prefers Sys beside the executable. Install an
+    # application-owned copy so a relocated prefix never needs the build-time
+    # absolute datadir. Ordinary feature-disabled installation is unchanged.
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/Data/Sys" DESTINATION "${CMAKE_INSTALL_BINDIR}")
     foreach(_host dolphin-emu dolphin-nogui dolphin-tool)
       if(TARGET "${_host}")
         switch2kit_install_linux("${_host}")

@@ -22,7 +22,7 @@ jobs:
       - name: Install native dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth
+          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
           git config --global --add safe.directory "$PWD"
       - name: Build and install the controller-enabled application
         shell: bash
@@ -34,6 +34,7 @@ jobs:
           python3 Tools/test_switch2kit_mapping.py --sanitize
           python3 Tools/test_switch2kit_host.py --sanitize
           python3 Tools/test_switch2kit_autoconnect.py
+          python3 Tools/test_switch2kit_runtime.py
       - name: Relocate, resolve native dependencies and launch the installed binary
         shell: bash
         run: |
@@ -45,8 +46,12 @@ jobs:
           ldd "$app/bin/dolphin-emu" | tee linux-dependencies.log
           ! grep -q 'not found' linux-dependencies.log
           grep -F "$app" linux-dependencies.log | grep libSwitch2KitC
-          xvfb-run -a "$app/bin/dolphin-emu" --version
           tar -C "$RUNNER_TEMP" -czf Dolphin-Switch2Kit-linux-x86_64.tar.gz Dolphin-Switch2Kit-linux-x86_64
+          mv "$app" "$RUNNER_TEMP/unavailable-staged-application"
+          dbus-run-session -- xvfb-run -a python3 Externals/Switch2Kit/tests/emulator-launch/linux.py dolphin \
+            "$PWD/Dolphin-Switch2Kit-linux-x86_64.tar.gz" --report "$PWD/linux-launch.json" \
+            --forbidden-root "$PWD" --forbidden-root "$RUNNER_TEMP/disabled-build-tree" \
+            --forbidden-root "$RUNNER_TEMP/unavailable-staged-application"
       - name: Controller-enabled development build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -59,5 +64,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-linux-diagnostics
-          path: linux-*.log
+          path: |
+            linux-*.log
+            linux-launch.json
           retention-days: 7
