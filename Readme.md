@@ -1,4 +1,4 @@
-# Dolphin - A GameCube and Wii Emulator
+# Switch2 Dolphin - A GameCube and Wii Emulator w/Switch2 NSO controller support
 
 **This fork embeds [Switch2Kit](https://github.com/jmonster/Switch2Kit) for NSO GameCube and Nintendo Switch 2 Pro controllers on macOS 15+, with experimental Linux x86-64 and Windows x64 builds.**
 
@@ -6,9 +6,29 @@ Get this controller-enabled Dolphin, connect your controller, select a GameCube 
 
 ## Quick start
 
-Use the application artifacts below from **this fork**, not upstream Dolphin binaries. Sign in to GitHub, select a successful run for `feature/switch2kit-desktop-platforms` while this PR is unmerged, and download the named application artifact. Open the run's jobs to check the build and launch results for that revision. Source and diagnostics archives are not applications. These are expiring development artifacts, not published, notarized or production-signed releases; use [Build from source](#build-from-source-alternative) when no matching artifact is available.
+Build locally using the macOS commands below or the [platform build guide](Docs/Switch2Kit.md#build-from-source); no CI run is needed to build from source. For a prebuilt application, use the artifacts below from **this fork**, not upstream Dolphin binaries. Sign in to GitHub, select a successful run for `feature/switch2kit-desktop-platforms` while this PR is unmerged, and download the named application artifact. Open the run's jobs to check the build and launch results for that revision. Source and diagnostics archives are not applications. These are expiring development artifacts, not published, notarized or production-signed releases; use [Build from source](#build-from-source) when no matching artifact is available.
 
 ### macOS
+
+To build locally, use macOS 15+, Xcode 26+ with Swift 6.2+, and Homebrew. Open Xcode once to finish setup and select its Command Line Tools. On Apple Silicon, use a native Terminal and Homebrew rather than Rosetta.
+
+```sh
+brew install cmake ninja nasm automake libtool qt@6
+git clone --branch feature/switch2kit-desktop-platforms --recurse-submodules https://github.com/jmonster/dolphin.git dolphin-switch2kit
+cd dolphin-switch2kit
+cmake -S . -B build-switch2kit -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+  -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
+  -DENABLE_SWITCH2KIT=ON -DENABLE_SDL=ON -DENABLE_QT=ON \
+  -DUSE_SYSTEM_SDL3=OFF \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+  -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON
+cmake --build build-switch2kit --target dolphin-emu --parallel 3
+open build-switch2kit/Binaries/DolphinQt.app
+```
+
+Move `build-switch2kit/Binaries/DolphinQt.app` to Applications and reopen that same app for later sessions. You do not need to pair the controller in macOS Bluetooth Settings first: in Dolphin's **Switch 2 Controllers** section, click **Find Controllers**, then hold Sync. Discovery only starts through Find or the opt-in **Automatically connect** setting; Sync alone does not start a stopped backend.
 
 On macOS 15 or newer, use [Native Switch2Kit builds](https://github.com/jmonster/dolphin/actions/workflows/native-switch2kit.yml): **Dolphin-Switch2Kit-arm64** for Apple Silicon, or **Dolphin-Switch2Kit-x86_64** for Intel. Extract the downloaded artifact ZIP, then the `Dolphin-Switch2Kit-<architecture>.zip` inside it. Move `DolphinQt.app` to Applications and open it. Enable Bluetooth and allow Dolphin's Bluetooth request. A denied permission can be changed under **System Settings > Privacy & Security > Bluetooth**.
 
@@ -41,7 +61,9 @@ Reopen the same extracted application on later launches. Saved physical assignme
 
 For Wii games, configure an **Emulated Wii Remote** and its SDL input normally; the GameCube-port shortcut does not configure Wii motion. Discover each Joy-Con 2 half with Find/Sync and map each desired device manually. Do not assume a paired virtual controller or calibrated motion is created automatically. The [controller guide](Docs/Switch2Kit.md#controller-differences-and-motion) explains these distinctions.
 
-### Build from source (alternative)
+<img width="968" height="1082" alt="Screenshot 2026-09-19 at 1 58 43 PM" src="https://github.com/user-attachments/assets/9a0c2938-4f14-400e-b2d2-bde3cde324b3" />
+
+### Build from source
 
 The [build guide](Docs/Switch2Kit.md#build-from-source) contains complete platform prerequisites and commands. Clone the implementation branch while the PR is unmerged:
 
