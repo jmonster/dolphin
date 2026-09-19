@@ -40,7 +40,10 @@ For Wii games, configure an **Emulated Wii Remote** and its SDL device through D
 
 **No Find button?** Open the controller-enabled app above. **No controller?** Check Bluetooth access for Dolphin in **System Settings > Privacy & Security > Bluetooth**, close competing controller apps, and retry Find while holding Sync. Saved custom mappings are not replaced on reconnect; **Use Recommended Mapping** in Configure is the explicit reset-to-preset action.
 
-### Build from source (alternative)
+<img width="968" height="1082" alt="Screenshot 2026-09-19 at 1 58 43 PM" src="https://github.com/user-attachments/assets/9a0c2938-4f14-400e-b2d2-bde3cde324b3" />
+
+
+### Build from source
 
 <details>
 <summary>Build and launch the controller-enabled app on your Mac</summary>
