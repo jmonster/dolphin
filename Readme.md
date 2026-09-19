@@ -1,4 +1,4 @@
-# Dolphin - A GameCube and Wii Emulator
+# Switch2 Dolphin - A GameCube and Wii Emulator w/Switch2 NSO controller support
 
 **This fork supports the Nintendo Switch Online GameCube controller and Nintendo Switch 2 Pro Controller on macOS through [Switch2Kit](https://github.com/jmonster/Switch2Kit).**
 
