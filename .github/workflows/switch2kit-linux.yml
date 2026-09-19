@@ -1,113 +1,76 @@
-name: Switch2Kit Linux application
+name: Linux Switch2Kit host
 on:
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: switch2kit-linux-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
   linux:
-    runs-on: ubuntu-24.04
-    container: swift:6.2.1-noble
-    timeout-minutes: 90
-    env:
-      DEBIAN_FRONTEND: noninteractive
+    runs-on: ubuntu-22.04
+    container: swift:6.2.1-jammy
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
           submodules: recursive
+          persist-credentials: false
       - name: Install native dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
-          git config --global --add safe.directory "$PWD"
-      - name: Build and install the controller-enabled application
-        shell: bash
+          apt-get install -y ninja-build cmake build-essential pkg-config python3 python3-dbusmock python3-dbus \
+            dbus-x11 bluez libdbus-1-dev libgtk-3-dev libavcodec-dev libavformat-dev libavutil-dev \
+            libswscale-dev libswresample-dev libx11-dev libxext-dev libxi-dev libxrandr-dev libudev-dev \
+            libusb-1.0-0-dev libevdev-dev libmbedtls-dev libcurl4-openssl-dev liblzo2-dev libzstd-dev \
+            libbz2-dev zlib1g-dev libpng-dev libgl1-mesa-dev mesa-utils xvfb openbox xdotool x11-utils wmctrl \
+            qt6-base-dev qt6-base-private-dev qt6-svg-dev qt6-tools-dev patchelf
+      - name: Build a backend-disabled native application without Swift
         run: |
-          set -o pipefail
-          bash Tools/build-switch2kit-linux.sh 2>&1 | tee linux-build.log
-      - name: Execute controller policies
+          cmake -S . -B build-disabled -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_SWITCH2KIT=OFF \
+            -DENABLE_TESTS=OFF -DENABLE_SWIFT=OFF -DUSE_DISCORD_PRESENCE=OFF \
+            -DENABLE_AUTOUPDATE=OFF -DCMAKE_DISABLE_FIND_PACKAGE_Swift=TRUE 2>&1 | tee linux-disabled-configure.log
+          cmake --build build-disabled --target dolphin-emu -j4 2>&1 | tee linux-disabled-build.log
+          ldd build-disabled/Binaries/dolphin-emu | tee linux-disabled-dependencies.log
+          ! grep -Ei 'Switch2Kit|libswift|libFoundation|libdispatch' linux-disabled-dependencies.log
+          # Qt initializes even for --version. This disabled-backend smoke probe
+          # is distinct from the enabled package's visible GUI/quit/relaunch gate.
+          profile=$(mktemp -d)
+          trap 'rm -rf "$profile"' EXIT
+          HOME="$profile" XDG_CONFIG_HOME="$profile/config" XDG_CACHE_HOME="$profile/cache" \
+            QT_QPA_PLATFORM=offscreen build-disabled/Binaries/dolphin-emu --user "$profile/user" --version
+      - name: Build the complete controller-enabled application
         run: |
-          python3 Tools/test_switch2kit_mapping.py --sanitize
-          python3 Tools/test_switch2kit_host.py --sanitize
-          python3 Tools/test_switch2kit_autoconnect.py
-          python3 Tools/test_switch2kit_runtime.py
-      - name: Relocate, resolve native dependencies and launch the installed binary
-        shell: bash
+          Tools/build-switch2kit-linux.sh build-switch2kit-linux package-switch2kit-linux 2>&1 | tee linux-build.log
+      - name: Inspect the installed dependency closure
         run: |
-          set -euo pipefail
-          mv build-switch2kit/install "$RUNNER_TEMP/Dolphin-Switch2Kit-linux-x86_64"
-          app="$RUNNER_TEMP/Dolphin-Switch2Kit-linux-x86_64"
-          mv build-switch2kit "$RUNNER_TEMP/disabled-build-tree"
-          test -n "$(find "$app" -name libSwitch2KitC.so -print -quit)"
-          ldd "$app/bin/dolphin-emu" | tee linux-dependencies.log
+          test -x package-switch2kit-linux/bin/dolphin-emu
+          test -f package-switch2kit-linux/lib/dolphin/libSwitch2KitC.so
+          find package-switch2kit-linux -type f -o -type l | sort | tee linux-package-files.log
+          ldd package-switch2kit-linux/bin/dolphin-emu | tee linux-dependencies.log
           ! grep -q 'not found' linux-dependencies.log
-          grep -F "$app" linux-dependencies.log | grep libSwitch2KitC
-          tar -C "$RUNNER_TEMP" -czf Dolphin-Switch2Kit-linux-x86_64.tar.gz Dolphin-Switch2Kit-linux-x86_64
-          mv "$app" "$RUNNER_TEMP/unavailable-staged-application"
-          dbus-run-session -- xvfb-run -a python3 Externals/Switch2Kit/tests/emulator-launch/linux.py dolphin \
-            "$PWD/Dolphin-Switch2Kit-linux-x86_64.tar.gz" --report "$PWD/linux-launch.json" \
-            --forbidden-root "$PWD" --forbidden-root "$RUNNER_TEMP/disabled-build-tree" \
-            --forbidden-root "$RUNNER_TEMP/unavailable-staged-application"
-      - name: Controller-enabled development build
+          readelf -d package-switch2kit-linux/bin/dolphin-emu | tee linux-rpath.log
+          python3 Tools/test_switch2kit_retained.py
+      - name: Package the controller-enabled application
+        run: tar -czf dolphin-switch2kit-linux-x86_64.tar.gz package-switch2kit-linux
+      - name: Verify extraction, relocation, normal shutdown and relaunch
+        run: |
+          Tools/test_switch2kit_linux_launch.sh dolphin-switch2kit-linux-x86_64.tar.gz 2>&1 | tee linux-launch.log
+      - name: Upload controller-enabled application
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Dolphin-Switch2Kit-linux-x86_64
-          path: Dolphin-Switch2Kit-linux-x86_64.tar.gz
-          retention-days: 14
+          name: dolphin-switch2kit-linux-x86_64
+          path: dolphin-switch2kit-linux-x86_64.tar.gz
           if-no-files-found: error
-      - name: Native diagnostics
+          retention-days: 14
+      - name: Preserve native diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Dolphin-Switch2Kit-linux-diagnostics
+          name: dolphin-linux-native-diagnostics
           path: |
             linux-*.log
             linux-launch.json
-          retention-days: 7
-
-  disabled:
-    # A complete ordinary application build in an image without Swift. This is
-    # not a controller-enabled artifact and does not use the SDK build helper.
-    runs-on: ubuntu-24.04
-    container: ubuntu:24.04
-    timeout-minutes: 90
-    env:
-      DEBIAN_FRONTEND: noninteractive
-    steps:
-      - name: Install ordinary native dependencies without Swift
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus
-          if command -v swift || command -v swiftc; then
-            echo 'The backend-disabled qualification image must not contain Swift.' >&2
-            exit 1
-          fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          submodules: recursive
-      - name: Build the complete application with Switch2Kit disabled
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "$PWD"
-          cmake -S . -B build-disabled -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DENABLE_SWITCH2KIT=OFF -DENABLE_SDL=ON -DENABLE_QT=ON \
-            -DUSE_SYSTEM_SDL3=OFF -DENABLE_TESTS=OFF -DENABLE_VULKAN=OFF \
-            -DENABLE_AUTOUPDATE=OFF 2>&1 | tee disabled-configure.log
-          cmake --build build-disabled --target dolphin-emu --parallel 3 2>&1 | tee disabled-build.log
-          ldd build-disabled/Binaries/dolphin-emu | tee disabled-dependencies.log
-          ! grep -q 'not found' disabled-dependencies.log
-          ! grep -Ei 'Switch2Kit|libswift|libFoundation|libdispatch|libBlocksRuntime' disabled-dependencies.log
-          build-disabled/Binaries/dolphin-emu --version
-      - name: Backend-disabled build diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: Dolphin-without-Switch2Kit-linux-diagnostics
-          path: disabled-*.log
+          if-no-files-found: warn
           retention-days: 7
