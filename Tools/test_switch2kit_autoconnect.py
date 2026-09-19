@@ -30,8 +30,23 @@ class AutomaticConnectionWiringTests(unittest.TestCase):
         update = pane.split("const auto update_status =", 1)[1].split("auto* const timer", 1)[0]
         self.assertIn("QSignalBlocker", update)
         self.assertIn("state.scanning && state.auto_connect", update)
-        for action in ("FindSwitch2Controllers", "SetSwitch2KitAutoConnect", "Mapping::Apply"):
+        for action in ("FindSwitch2Controllers", "StopSwitch2Controllers",
+                       "SetSwitch2KitAutoConnect", "Mapping::Apply"):
             self.assertNotIn(action, update)
+
+    def test_section_initialization_does_not_change_connection_policy(self):
+        pane = self.read("Source/Core/DolphinQt/Config/ControllersPane.cpp")
+        initialization = pane.split("connect(find,", 1)[0]
+        for action in ("FindSwitch2Controllers(", "StopSwitch2Controllers(",
+                       "SetSwitch2KitAutoConnect(", "StartSwitch2KitAutoConnect(", "Mapping::Apply"):
+            self.assertNotIn(action, initialization)
+
+    def test_user_actions_refresh_the_displayed_backend_state(self):
+        pane = self.read("Source/Core/DolphinQt/Config/ControllersPane.cpp")
+        # Reflect explicit stop and saved-setting failures before the next timer tick.
+        for action in ("FindSwitch2Controllers()", "StopSwitch2Controllers()",
+                       "SetSwitch2KitAutoConnect(enabled)"):
+            self.assertIn(f"{action};\n    update_status();", pane)
 
     def test_polling_and_initialization_never_start_bluetooth(self):
         native = self.read("Source/Core/InputCommon/ControllerInterface/SDL/Switch2Kit.cpp")
