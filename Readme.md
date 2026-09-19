@@ -8,7 +8,8 @@ Controller support is built into Dolphin. There is no separate Switch2Kit app or
 
 ### Get a controller-enabled build
 
-1. git clone this repo
+0. You do NOT need to pair your controller with macOS. The app will discover it automatically when it is in sync mode.
+1. git clone this repo to your machine
 2. 
 ```sh
 cmake -S . -B build -G Ninja \
