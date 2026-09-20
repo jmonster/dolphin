@@ -20,11 +20,6 @@ if(ENABLE_QT)
 endif()
 
 if(ENABLE_SWITCH2KIT)
-  if(NOT APPLE)
-    target_sources(dolphin-emu PRIVATE
-      DolphinQt/Config/Mapping/Switch2KitMapping.cpp
-      DolphinQt/Config/Mapping/Switch2KitMapping.h)
-  endif()
   if(WIN32)
     # These C++ hosts share one runtime directory and one Swift product: the
     # facade. Stage its complete compiler-selected runtime closure before the
