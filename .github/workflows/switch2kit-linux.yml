@@ -83,7 +83,10 @@ jobs:
     # A complete ordinary application build in an image without Swift. This is
     # not a controller-enabled artifact and does not use the SDK build helper.
     runs-on: ubuntu-24.04
-    container: ubuntu:24.04
+    container:
+      image: ubuntu:24.04
+      # Upstream memory-mapping tests exceed Docker's default 64 MiB /dev/shm.
+      options: --shm-size=512m
     timeout-minutes: 45
     env:
       DEBIAN_FRONTEND: noninteractive
@@ -91,6 +94,16 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
+      - name: Check shared memory before installing dependencies or compiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /dev/shm
+          available=$(df -B1 --output=avail /dev/shm | tail -n 1)
+          if ! [ "$available" -ge "$((128 * 1024 * 1024))" ]; then
+            echo '::error::Upstream memory tests need at least 128 MiB free in /dev/shm. Keep --shm-size=512m on this container.' >&2
+            exit 1
+          fi
       - name: Install ordinary native dependencies without Swift
         run: |
           apt-get update
