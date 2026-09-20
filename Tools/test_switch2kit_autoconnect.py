@@ -63,9 +63,15 @@ class AutomaticConnectionWiringTests(unittest.TestCase):
 
     def test_ci_retains_regressions(self):
         workflow = self.read(".github/workflows/native-switch2kit.yml")
-        for script in ("test_switch2kit.py", "test_switch2kit_host.py --sanitize",
-                       "test_switch2kit_mapping.py --sanitize", "test_switch2kit_autoconnect.py"):
-            self.assertIn(script, workflow)
+        self.assertIn("python3 Tools/run_fast_tests.py", workflow)
+        # The budgeted runner owns these commands now. Check actual arguments,
+        # not script names that could appear only in workflow comments.
+        from run_fast_tests import TESTS
+        commands = {arguments for _, arguments, _ in TESTS}
+        for command in (("test_switch2kit.py",), ("test_switch2kit_host.py", "--sanitize"),
+                        ("test_switch2kit_mapping.py", "--sanitize"),
+                        ("test_switch2kit_autoconnect.py",)):
+            self.assertIn(command, commands)
 
 
 if __name__ == "__main__":
