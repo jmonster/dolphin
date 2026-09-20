@@ -1,8 +1,14 @@
-# This is the only automatic workflow. Budgets are enforced by Tools/check_ci_policy.py.
+# Upstream CMake/CTest plus scoped Switch2Kit qualification. See AGENTS.md.
 name: Native Switch2Kit
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Tests only, or explicit native qualification/cache priming'
+        type: choice
+        default: tests
+        options: [tests, sdk, macos, linux, windows, all]
 permissions:
   contents: read
 concurrency:
@@ -12,25 +18,106 @@ jobs:
   wiring:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
+    outputs:
+      sdk: ${{ steps.scope.outputs.sdk }}
+      macos: ${{ steps.scope.outputs.macos }}
+      linux: ${{ steps.scope.outputs.linux }}
+      windows: ${{ steps.scope.outputs.windows }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        timeout-minutes: 1
         with:
           persist-credentials: false
           fetch-depth: 1
-          submodules: false
-      - name: Enforce the CI cost policy before fetching dependencies
-        timeout-minutes: 1
+      - name: Select validation from the actual changed inputs
+        id: scope
         env:
-          PYTHONPATH: ${{ runner.temp }}/ci-policy
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TARGET: ${{ inputs.target || 'tests' }}
         run: |
-          python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --retries 1 --timeout 10 --target "$RUNNER_TEMP/ci-policy" PyYAML==6.0.3
-          python3 Tools/check_ci_policy.py
-      - name: Fetch only the pinned SDK and SDL, without their history
-        timeout-minutes: 1
+          if [ -n "$BASE_SHA" ]; then
+            git fetch --no-tags --depth 1 origin "$BASE_SHA"
+            python3 Tools/switch2kit_ci.py --base "$BASE_SHA"
+          else
+            python3 Tools/switch2kit_ci.py --target "$TARGET"
+          fi
+      - name: Fetch only the two dependencies used by the focused tests
         run: git submodule update --init --depth 1 Externals/Switch2Kit Externals/SDL/SDL
-      - name: Run the fast regressions (60 seconds total, 20 seconds per command)
-        timeout-minutes: 2
+      - name: Run the additions through CTest without building the emulator
+        run: |
+          cmake -S Source/UnitTests/Switch2Kit -B build-switch2kit-tests
+          ctest --test-dir build-switch2kit-tests --output-on-failure --no-tests=error
+  sdk-regressions:
+    needs: wiring
+    if: needs.wiring.outputs.sdk == 'true'
+    runs-on: macos-15
+    timeout-minutes: 5
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Initialize exactly the pinned SDK and Dolphin SDL
+        run: git submodule update --init --depth 1 Externals/Switch2Kit Externals/SDL/SDL
+      - name: Reuse the pinned Swift test build, not a previous test result
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: Externals/Switch2Kit/.build
+          key: s2k-sdk-tests-${{ runner.os }}-${{ runner.arch }}-xcode26.3-${{ hashFiles('Externals/Switch2Kit/Package.swift', 'Externals/Switch2Kit/Package.resolved', 'Externals/Switch2Kit/Sources/**', 'Externals/Switch2Kit/Tests/**') }}
+      - name: Exercise the real SDK and in-process SDL adapter without hardware
+        run: |
+          set -o pipefail
+          swift test --package-path Externals/Switch2Kit 2>&1 | tee switch2kit-sdk-tests.log
+          bash Externals/Switch2Kit/tests/rumble/run.sh 2>&1 | tee switch2kit-motor-tests.log
+          S2K_SDL_SOURCE="$PWD/Externals/SDL/SDL" \
+            bash Externals/Switch2Kit/tests/sdl-inprocess/verify.sh \
+            2>&1 | tee switch2kit-sdl-tests.log
+      - name: SDK test diagnostics
+        if: failure() || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Switch2Kit-sdk-regressions
+          path: switch2kit-*-tests.log
+  macos:
+    needs: [wiring, sdk-regressions]
+    if: >-
+      !cancelled() && needs.wiring.result == 'success' &&
+      (needs.sdk-regressions.result == 'success' || needs.sdk-regressions.result == 'skipped') &&
+      needs.wiring.outputs.macos == 'true'
+    uses: ./.github/workflows/switch2kit-macos.yml
+  linux:
+    needs: [wiring, sdk-regressions]
+    if: >-
+      !cancelled() && needs.wiring.result == 'success' &&
+      (needs.sdk-regressions.result == 'success' || needs.sdk-regressions.result == 'skipped') &&
+      needs.wiring.outputs.linux == 'true'
+    uses: ./.github/workflows/switch2kit-linux.yml
+  windows:
+    needs: [wiring, sdk-regressions]
+    if: >-
+      !cancelled() && needs.wiring.result == 'success' &&
+      (needs.sdk-regressions.result == 'success' || needs.sdk-regressions.result == 'skipped') &&
+      needs.wiring.outputs.windows == 'true'
+    uses: ./.github/workflows/switch2kit-windows.yml
+  checks:
+    name: Switch2Kit checks
+    needs: [wiring, sdk-regressions, macos, linux, windows]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require every selected check, including native qualification
         env:
-          PYTHONPATH: ${{ runner.temp }}/ci-policy
-        run: python3 Tools/run_fast_tests.py
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          jobs = json.loads(os.environ['RESULTS'])
+          assert jobs['wiring']['result'] == 'success', 'Focused tests or change selection failed'
+          selected = jobs['wiring']['outputs']
+          for target, job in [('sdk', 'sdk-regressions'), ('macos', 'macos'),
+                              ('linux', 'linux'), ('windows', 'windows')]:
+              assert selected.get(target) in ('true', 'false'), f'Missing selection for {target}'
+              expected = 'success' if selected[target] == 'true' else 'skipped'
+              assert jobs[job]['result'] == expected, f'{job}: {jobs[job]["result"]}, expected {expected}'
+          PYTHON

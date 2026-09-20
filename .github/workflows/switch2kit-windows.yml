@@ -1,6 +1,7 @@
-# Manual qualification/artifacts only. Never add automatic triggers; see AGENTS.md.
+# Called automatically for affected inputs; never a duplicate PR trigger.
 name: Switch2Kit Windows application
 on:
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,11 +14,18 @@ jobs:
     timeout-minutes: 45
     env:
       VCPKG_MAX_CONCURRENCY: 3
+      SCCACHE_GHA_ENABLED: 'true'
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Cache native compiler results (tests still run)
+        uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
+        with:
+          version: v0.10.0
       - uses: compnerd/gha-setup-swift@397094e75494a93fa8d81db0268dbc8f5d6cf7c6
         with:
           # Swift 6.2 ships Clang 19, which the VS 2026 STL rejects.
@@ -49,6 +57,7 @@ jobs:
           & ./Tools/test_switch2kit_windows_launch.ps1 -Archive 'Dolphin-Switch2Kit-windows-x86_64.zip' -ForbiddenRoot "$PWD"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Controller-enabled development application
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-windows-x86_64
@@ -56,7 +65,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Native diagnostics
-        if: always()
+        if: failure() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-windows-diagnostics

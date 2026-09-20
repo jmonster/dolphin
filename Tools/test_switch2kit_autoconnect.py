@@ -2,7 +2,10 @@
 # Copyright 2026 Dolphin Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Static UI/startup guards; execute test_switch2kit_host.py for host behavior."""
+import json
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,16 +65,21 @@ class AutomaticConnectionWiringTests(unittest.TestCase):
         self.assertIn("s_started = false;", stop)
 
     def test_ci_retains_regressions(self):
-        workflow = self.read(".github/workflows/native-switch2kit.yml")
-        self.assertIn("python3 Tools/run_fast_tests.py", workflow)
-        # The budgeted runner owns these commands now. Check actual arguments,
-        # not script names that could appear only in workflow comments.
-        from run_fast_tests import TESTS
-        commands = {arguments for _, arguments, _ in TESTS}
-        for command in (("test_switch2kit.py",), ("test_switch2kit_host.py", "--sanitize"),
-                        ("test_switch2kit_mapping.py", "--sanitize"),
-                        ("test_switch2kit_autoconnect.py",)):
-            self.assertIn(command, commands)
+        # Check CTest's actual commands, not copies of command names in comments.
+        with tempfile.TemporaryDirectory() as build:
+            subprocess.run(['cmake', '-S', str(ROOT / 'Source/UnitTests/Switch2Kit'),
+                            '-B', build], check=True, capture_output=True, timeout=15)
+            result = subprocess.run(['ctest', '--test-dir', build, '--show-only=json-v1'],
+                                    check=True, capture_output=True, text=True, timeout=5)
+        commands = {tuple(test['command'][1:]) for test in json.loads(result.stdout)['tests']}
+        for script, flags in (('test_switch2kit.py', ()),
+                              ('test_switch2kit_host.py', ('--sanitize',)),
+                              ('test_switch2kit_mapping.py', ('--sanitize',)),
+                              ('test_switch2kit_autoconnect.py', ())):
+            self.assertIn((str(ROOT / 'Tools' / script), *flags), commands)
+        workflow = self.read('.github/workflows/native-switch2kit.yml')
+        self.assertIn('ctest --test-dir build-switch2kit-tests --output-on-failure --no-tests=error',
+                      workflow)
 
 
 if __name__ == "__main__":

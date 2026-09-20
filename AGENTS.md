@@ -1,63 +1,57 @@
-# Repository instructions
+# Working on this Dolphin fork
 
-These rules apply to the entire repository and to every agent/contributor.
+## Upstream first
 
-## CI cost and test speed are hard requirements
+Keep Dolphin's upstream build system, Google Test suite, coding conventions and
+project documentation intact. Make the smallest additive change for Switch2Kit.
+Do not introduce a fork-wide test framework, custom YAML policy language, or a
+blanket rule forbidding native validation. Upstream's external Buildbot service
+is not automatically inherited by this fork; do not claim otherwise.
 
-Automatic tests must be lean and fast. A slow test must be reduced, replaced with
-a focused regression, or removed from automatic CI. Do not solve a timeout by
-raising the budget, adding runners, dropping assertions, skipping failures, or
-turning off sanitizers. A warm cache is not evidence that a test is cheap.
-
-- Exactly ONE automatic GitHub Actions job: `Native Switch2Kit / wiring`, on
-  `ubuntu-24.04`, for pull requests. No automatic macOS/Windows jobs, matrices,
-  scheduled builds, `workflow_run` chains, reusable-workflow escape hatches, or
-  duplicate branch-push jobs. Keep the gate unfiltered so changes to workflows,
-  this file, and test infrastructure are always checked.
-- Hard budgets: **60 seconds for the entire regression suite**, **20 seconds per
-  test command**, and **3 minutes for the whole job**, including setup. The job
-  timeout is a safety ceiling, not a target. Report cold-run timing when changing
-  tests; fail closed when a budget is exceeded.
-- Test production behavior at the smallest boundary. Small C/C++ harnesses,
-  sanitizer checks, source checks and tiny CMake fixtures are appropriate. Do not
-  compile Dolphin, Qt, SDL, the Swift SDK, or all dependencies to test a small
-  policy/disabled-feature branch. Do not build an application just to inspect it.
-- Only shallow checkout and the explicitly needed pinned Switch2Kit/SDL submodules
-  belong in the PR lane. No recursive submodule fetch, platform toolchain install,
-  source/application archive, or artifact upload. The one pinned PyYAML wheel is
-  installed into a temporary directory for structural workflow validation.
-- Add focused tests to `Tools/run_fast_tests.py`, not separate workflow jobs.
-  Preserve both compiler capacity probes, ASan/UBSan host/mapping coverage, consent,
-  and feature-disabled checks. Keep fixtures tiny; do not claim they qualify a
-  native platform, packaged application, Bluetooth hardware or gameplay.
-
-## Full application qualification is separate and explicitly requested
-
-The macOS, Linux, Windows and source-archive workflows are **workflow_dispatch
-only**. They are optional application/SDK qualification tools, not PR tests.
-Do not dispatch them without a human explicitly requesting that expensive work.
-Select one architecture/configuration at a time; do not recreate an automatic
-build matrix. Preserve real build, packaging, dependency and launch assertions
-when changing those tools. A passing fast PR check is not native qualification.
-
-## Required verification for CI/test edits
-
-Install `PyYAML==6.0.3` in your development environment, then run:
+The existing `unittests` target remains the baseline. Register our focused tests
+with CTest in `Source/UnitTests/Switch2Kit`, not a parallel Python test runner.
+The same registration can be configured alone for fast iteration:
 
 ```sh
-python3 Tools/check_ci_policy.py
-python3 Tools/test_ci_policy.py
 git submodule update --init --depth 1 Externals/Switch2Kit Externals/SDL/SDL
-python3 Tools/run_fast_tests.py   # Linux; enforces the shared deadline
+cmake -S Source/UnitTests/Switch2Kit -B build-switch2kit-tests
+ctest --test-dir build-switch2kit-tests --output-on-failure --no-tests=error
 ```
 
-`check_ci_policy.py` scans every `.yml`/`.yaml` workflow, rejects additional
-automatic triggers/jobs and allowlists the fast lane's steps. Its tests must catch
-attempts to restore expensive CI. Do not weaken the checker or runner to make a
-change pass. Budget/policy exceptions need explicit repository-owner approval.
-Repository-side checks are not a security boundary: keep `wiring` required in
-branch protection and review changes to this policy and its enforcement together.
+## Efficiency without loss of validation
 
-Make targeted changes, preserve controller behavior and user-data safeguards, and
-disclose AI-assisted changes and validation limitations in pull requests. Never
-claim a test, native build, or hardware check was performed unless it actually ran.
+Fast tests must exercise the smallest relevant production boundary. Keep ASan /
+UBSan, both Linux compiler-capacity probes, real CMake feature guards, and mapping,
+consent, identity, lifecycle and deployment regressions. The local CTest suite
+should remain under one minute; each command has a 20-second timeout and the CI
+job a 3-minute ceiling. Fix slow tests rather than silently dropping assertions,
+disabling sanitizers, increasing timeouts, or claiming skipped tests passed.
+
+Use changed inputs to avoid unrelated work. Documentation must not rebuild five
+applications. SDK/SDL pin changes require the real SDK, rumble and SDL integration
+suites plus native builds. Shared production/build/resource changes require native
+build/link/package/launch validation on all supported desktop architectures.
+Platform-specific scripts require their affected platform. Test the selector for
+renames, deletions, shared inputs and failure cases; unknown inputs fail toward
+more validation, not less. Never use labels or manual dispatch as a substitute
+for necessary automatic validation.
+
+Use compiler caches and the ordinary CMake build graph. Reuse upstream core
+objects rather than duplicating standalone builds. Run the unchanged upstream
+unit suite in the Linux application build tree. Do not duplicate it per platform
+without a demonstrated need. Cache hits must never skip test execution, relinking
+or package checks. Report cold/warm timings separately; caches can miss or expire.
+Cancel obsolete runs, fail early, and upload application artifacts only when
+requested. Do not add nightly builds, extra matrices or broader triggers without
+an explicit need and a measured runtime/cost impact.
+
+## Claims and review
+
+A source check is not a native build; a fixture is not the actual SDK; an SDK test
+is not Bluetooth hardware acceptance. Preserve native architecture, dependency,
+relocation and exact-archive launch checks. Never trade away required coverage to
+advertise a seconds-only result. CI changes must state what still runs, when it
+runs, what is not covered, and which exact revision actually passed. Do not merge
+based on an earlier revision's green result. Disclose AI assistance and leave
+controller behavior, dependency pins and user-data safeguards unchanged unless
+the task explicitly requires changing them.

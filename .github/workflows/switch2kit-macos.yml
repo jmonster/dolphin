@@ -1,60 +1,39 @@
-# Full native qualification is opt-in, never a pull-request test. See AGENTS.md.
+# Called automatically for affected inputs; never a duplicate PR trigger.
 name: Switch2Kit macOS qualification
 on:
+  workflow_call:
   workflow_dispatch:
-    inputs:
-      target:
-        description: 'Explicit native qualification (application builds can take 45 minutes)'
-        required: true
-        type: choice
-        default: sdk
-        options:
-          - sdk
-          - arm64
-          - x86_64
 permissions:
   contents: read
 concurrency:
-  group: switch2kit-macos-${{ github.ref }}-${{ inputs.target }}
+  group: switch2kit-macos-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  sdk-regressions:
-    if: inputs.target == 'sdk'
-    runs-on: macos-15
-    timeout-minutes: 5
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - name: Initialize exactly the pinned SDK and Dolphin SDL
-        run: git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
-      - name: Exercise the real SDK and in-process SDL adapter without hardware
-        run: |
-          set -o pipefail
-          swift test --package-path Externals/Switch2Kit 2>&1 | tee switch2kit-sdk-tests.log
-          bash Externals/Switch2Kit/tests/rumble/run.sh 2>&1 | tee switch2kit-motor-tests.log
-          S2K_SDL_SOURCE="$PWD/Externals/SDL/SDL" \
-            bash Externals/Switch2Kit/tests/sdl-inprocess/verify.sh \
-            2>&1 | tee switch2kit-sdl-tests.log
-      - name: SDK test diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: Switch2Kit-sdk-regressions
-          path: switch2kit-*-tests.log
   macos:
-    if: inputs.target == 'arm64' || inputs.target == 'x86_64'
-    runs-on: ${{ inputs.target == 'arm64' && 'macos-15' || 'macos-15-intel' }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      SCCACHE_GHA_ENABLED: 'true'
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           persist-credentials: false
+      - name: Cache native compiler results (tests still run)
+        uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
+        with:
+          version: v0.10.0
       - name: Install build dependencies
         run: brew install cmake ninja nasm automake libtool qt@6
       - name: Check source pin and integration
@@ -66,7 +45,7 @@ jobs:
           python3 Tools/test_switch2kit_mapping.py --sanitize
       - name: Build the complete application
         env:
-          ARCH: ${{ inputs.target }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -o pipefail
           test "$(uname -m)" = "$ARCH"
@@ -82,7 +61,7 @@ jobs:
             2>&1 | tee switch2kit-build.log
       - name: Inspect and archive application
         env:
-          ARCH: ${{ inputs.target }}
+          ARCH: ${{ matrix.arch }}
         run: |
           app=build-switch2kit/Binaries/DolphinQt.app
           test -d "$app"
@@ -95,23 +74,24 @@ jobs:
           ditto -c -k --keepParent "$app" "Dolphin-Switch2Kit-$ARCH.zip"
       - name: Launch, normally quit and relaunch the exact ZIP with build roots denied
         env:
-          ARCH: ${{ inputs.target }}
+          ARCH: ${{ matrix.arch }}
         run: |
           python3 Tools/test_switch2kit_bundle.py "Dolphin-Switch2Kit-$ARCH.zip" \
             --architecture "$ARCH" --report switch2kit-validation.json
       - name: Application artifact (not hardware-qualified or notarized)
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Dolphin-Switch2Kit-${{ inputs.target }}
+          name: Dolphin-Switch2Kit-${{ matrix.arch }}
           path: |
-            Dolphin-Switch2Kit-${{ inputs.target }}.zip
+            Dolphin-Switch2Kit-${{ matrix.arch }}.zip
             switch2kit-validation.json
           if-no-files-found: error
       - name: Build diagnostics
-        if: always()
+        if: failure() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Switch2Kit-${{ inputs.target }}-diagnostics
+          name: Switch2Kit-${{ matrix.arch }}-diagnostics
           path: |
             switch2kit-*.log
             switch2kit-*.sample

@@ -23,3 +23,9 @@ endmacro()
 add_subdirectory(Common)
 add_subdirectory(Core)
 add_subdirectory(VideoCommon)
+
+# These existing fixture harnesses use a POSIX compiler driver. Native Windows
+# compilation and package launch are checked separately, without these stubs.
+if(ENABLE_SWITCH2KIT AND NOT WIN32)
+  add_subdirectory(Switch2Kit)
+endif()

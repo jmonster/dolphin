@@ -1,29 +1,23 @@
-# Manual qualification/artifacts only. Never add automatic triggers; see AGENTS.md.
+# Called automatically for affected inputs; never a duplicate PR trigger.
 name: Switch2Kit Linux application
 on:
+  workflow_call:
   workflow_dispatch:
-    inputs:
-      target:
-        description: 'Choose ONE complete application build (can take 25 minutes)'
-        required: true
-        type: choice
-        default: enabled
-        options:
-          - enabled
-          - disabled
 permissions:
   contents: read
 concurrency:
-  group: switch2kit-linux-${{ github.ref }}-${{ inputs.target }}
+  group: switch2kit-linux-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   linux:
-    if: inputs.target == 'enabled'
     runs-on: ubuntu-24.04
     container: swift:6.2.1-noble
     timeout-minutes: 45
     env:
       DEBIAN_FRONTEND: noninteractive
+      SCCACHE_GHA_ENABLED: 'true'
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -34,6 +28,10 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends build-essential cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
           git config --global --add safe.directory "$PWD"
+      - name: Cache native compiler results (tests still run)
+        uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
+        with:
+          version: v0.10.0
       - name: Build and install the controller-enabled application
         shell: bash
         run: |
@@ -63,6 +61,7 @@ jobs:
             --forbidden-root "$PWD" --forbidden-root "$RUNNER_TEMP/disabled-build-tree" \
             --forbidden-root "$RUNNER_TEMP/unavailable-staged-application"
       - name: Controller-enabled development build
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-linux-x86_64
@@ -70,7 +69,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Native diagnostics
-        if: always()
+        if: failure() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-linux-diagnostics
@@ -80,7 +79,7 @@ jobs:
           retention-days: 7
 
   disabled:
-    if: inputs.target == 'disabled'
+    needs: linux
     # A complete ordinary application build in an image without Swift. This is
     # not a controller-enabled artifact and does not use the SDK build helper.
     runs-on: ubuntu-24.04
@@ -88,6 +87,9 @@ jobs:
     timeout-minutes: 45
     env:
       DEBIAN_FRONTEND: noninteractive
+      SCCACHE_GHA_ENABLED: 'true'
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - name: Install ordinary native dependencies without Swift
         run: |
@@ -101,6 +103,10 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Cache native compiler results (tests still run)
+        uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
+        with:
+          version: v0.10.0
       - name: Build the complete application with Switch2Kit disabled
         shell: bash
         run: |
@@ -108,9 +114,10 @@ jobs:
           git config --global --add safe.directory "$PWD"
           cmake -S . -B build-disabled -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DENABLE_SWITCH2KIT=OFF -DENABLE_SDL=ON -DENABLE_QT=ON \
-            -DUSE_SYSTEM_SDL3=OFF -DENABLE_TESTS=OFF -DENABLE_VULKAN=OFF \
+            -DUSE_SYSTEM_SDL3=OFF -DENABLE_TESTS=ON -DENABLE_VULKAN=OFF \
             -DENABLE_AUTOUPDATE=OFF 2>&1 | tee disabled-configure.log
           cmake --build build-disabled --target dolphin-emu --parallel 3 2>&1 | tee disabled-build.log
+          cmake --build build-disabled --target unittests --parallel 3 2>&1 | tee upstream-unittests.log
           ldd build-disabled/Binaries/dolphin-emu | tee disabled-dependencies.log
           ! grep -q 'not found' disabled-dependencies.log
           ! grep -Ei 'Switch2Kit|libswift|libFoundation|libdispatch|libBlocksRuntime' disabled-dependencies.log
@@ -121,9 +128,11 @@ jobs:
           HOME="$profile" XDG_CONFIG_HOME="$profile/config" XDG_CACHE_HOME="$profile/cache" \
             QT_QPA_PLATFORM=offscreen build-disabled/Binaries/dolphin-emu --user "$profile/user" --version
       - name: Backend-disabled build diagnostics
-        if: always()
+        if: failure() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-without-Switch2Kit-linux-diagnostics
-          path: disabled-*.log
+          path: |
+            disabled-*.log
+            upstream-unittests.log
           retention-days: 7
