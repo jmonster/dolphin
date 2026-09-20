@@ -12,8 +12,6 @@ jobs:
   wiring:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
-    env:
-      PYTHONPATH: ${{ runner.temp }}/ci-policy
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         timeout-minutes: 1
@@ -23,6 +21,8 @@ jobs:
           submodules: false
       - name: Enforce the CI cost policy before fetching dependencies
         timeout-minutes: 1
+        env:
+          PYTHONPATH: ${{ runner.temp }}/ci-policy
         run: |
           python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --retries 1 --timeout 10 --target "$RUNNER_TEMP/ci-policy" PyYAML==6.0.3
           python3 Tools/check_ci_policy.py
@@ -31,4 +31,6 @@ jobs:
         run: git submodule update --init --depth 1 Externals/Switch2Kit Externals/SDL/SDL
       - name: Run the fast regressions (60 seconds total, 20 seconds per command)
         timeout-minutes: 2
+        env:
+          PYTHONPATH: ${{ runner.temp }}/ci-policy
         run: python3 Tools/run_fast_tests.py

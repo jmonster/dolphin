@@ -82,18 +82,19 @@ def validate_workflow(name, workflow):
     require(set(jobs) == {"wiring"}, "Automatic CI has exactly one job: wiring")
     job = jobs["wiring"]
     require(isinstance(job, dict), "Invalid automatic job")
-    require(set(job) == {"runs-on", "timeout-minutes", "env", "steps"},
+    require(set(job) == {"runs-on", "timeout-minutes", "steps"},
             "No matrices, services, containers, reusable jobs or conditional/soft-fail gates")
     require(job["runs-on"] == "ubuntu-24.04", "Only one standard Linux runner is permitted")
     require(job["timeout-minutes"] == "3", "Automatic job hard limit is 3 minutes")
-    require(job["env"] == {"PYTHONPATH": "${{ runner.temp }}/ci-policy"},
-            "Only the isolated YAML parser path belongs in the automatic job environment")
+    # runner.temp is available only after a runner is assigned (step env),
+    # not in jobs.<job_id>.env. Keep the parser isolated to its two consumers.
+    parser_env = {"PYTHONPATH": "${{ runner.temp }}/ci-policy"}
     expected = [
         {"uses": CHECKOUT, "timeout-minutes": "1", "with": {
             "persist-credentials": "false", "fetch-depth": "1", "submodules": "false"}},
-        {"run": BOOTSTRAP, "timeout-minutes": "1"},
+        {"run": BOOTSTRAP, "timeout-minutes": "1", "env": parser_env},
         {"run": SUBMODULES, "timeout-minutes": "1"},
-        {"run": FAST_TESTS, "timeout-minutes": "2"},
+        {"run": FAST_TESTS, "timeout-minutes": "2", "env": parser_env},
     ]
     steps = job["steps"]
     require(isinstance(steps, list) and all(isinstance(step, dict) for step in steps),

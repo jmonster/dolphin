@@ -38,6 +38,7 @@ class WorkflowPolicyTests(unittest.TestCase):
                              ('runs-on', ['self-hosted']), ('timeout-minutes', '90'),
                              ('strategy', {'matrix': {'os': ['ubuntu-24.04', 'macos-15']}}),
                              ('container', 'swift:6.2.1-noble'), ('services', {}),
+                             ('env', {'PYTHONPATH': '${{ runner.temp }}/ci-policy'}),
                              ('uses', './.github/workflows/build.yml'),
                              ('continue-on-error', 'true'), ('if', 'false')):
             with self.subTest(field=field, value=value):
