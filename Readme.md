@@ -1,60 +1,20 @@
 # Switch2 Dolphin - A GameCube and Wii Emulator w/Switch2 NSO controller support
 
-**This fork supports the Nintendo Switch Online GameCube controller and Nintendo Switch 2 Pro Controller on macOS through [Switch2Kit](https://github.com/jmonster/Switch2Kit).**
+**This fork embeds [Switch2Kit](https://github.com/jmonster/Switch2Kit) for NSO GameCube and Nintendo Switch 2 Pro controllers on macOS 15+, with experimental Linux x86-64 and Windows x64 builds.**
 
-Controller support is built into Dolphin. There is no separate Switch2Kit app or controller driver to install, and GameCube/Pro controller setup includes recommended mappings and rumble.
+Get this controller-enabled Dolphin, connect your controller, select a GameCube port, and play. No separate Switch2Kit dashboard, network bridge, SDL override or virtual-controller driver is needed. Individual Joy-Con 2 halves remain available through manual bindings.
 
-## Quick start (macOS 15+)
+## Quick start
 
-### Get a controller-enabled build
+Build locally using the macOS commands below or the [platform build guide](Docs/Switch2Kit.md#build-from-source); no CI run is needed to build from source. For a prebuilt application, use the artifacts below from **this fork**, not upstream Dolphin binaries. Sign in to GitHub, select a successful run for `feature/switch2kit-desktop-platforms` while this PR is unmerged, and download the named application artifact. Open the run's jobs to check the build and launch results for that revision. Source and diagnostics archives are not applications. These are expiring development artifacts, not published, notarized or production-signed releases; use [Build from source](#build-from-source) when no matching artifact is available.
 
-0. You do NOT need to pair your controller with macOS. The app will discover it automatically when it is in sync mode.
-1. git clone this repo to your machine
-2. 
-```sh
-cmake -S . -B build -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-    -DENABLE_SWITCH2KIT=ON \
-    -DENABLE_SDL=ON \
-    -DENABLE_QT=ON \
-    -DUSE_SYSTEM_SDL3=OFF \
-    -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
-    -DENABLE_VULKAN=OFF \
-    -DENABLE_TESTS=OFF \
-    -DPOSTPROCESS_BUNDLE=ON &&
-cmake --build build --target dolphin-emu --parallel 8
-```
-3. Move **build/Binaries/DolphinQt.app** to Applications and open it. Reopen this same app for later sessions.
-4. Open Settings, Controller and turn on Switch2 controller finding.
+### macOS
 
-### Connect and play
-
-1. Turn on your Mac's Bluetooth and close other apps managing the controller, including the Switch2Kit dashboard or Cemu. In Dolphin, open **Controllers** (Controller Settings). In the **Switch 2 Controllers** section, click **Find Controllers**, allow Bluetooth access, and hold the controller's **Sync** button until its player lights sweep. The search lasts 60 seconds; click Find again to retry.
-2. Beside the desired **GameCube port**, choose **Switch2Kit GameCube** or **Switch2Kit Pro Controller 2** in the physical-controller dropdown. Dolphin selects **Standard Controller** and applies the button, stick, trigger, and rumble mappings automatically. This is not **GameCube Adapter for Wii U** mode.
-3. Open that port's **Configure** window to check button presses and releases, sticks, and triggers, then open your GameCube game. On the NSO GameCube controller, partial L/R travel and the full-click buttons are separate inputs. Pro Controller ZL/ZR are on/off and cannot reproduce an analog squeeze.
-
-For automatic reconnection on later launches or after a long pause, enable **Automatically connect** in the **Switch 2 Controllers** section and turn the controller on when you return. This option is off by default; otherwise use **Find Controllers** each session. **Disconnect All** in that section stops the current session without deleting mappings.
-
-For Wii games, configure an **Emulated Wii Remote** and its SDL device through Dolphin's normal Wii Remote settings; the GameCube-port shortcut above does not configure a Wii Remote or add calibrated Wii motion. Individual Joy-Con 2 halves also need normal manual bindings.
-
-**No Find button?** Open the controller-enabled app above. **No controller?** Check Bluetooth access for Dolphin in **System Settings > Privacy & Security > Bluetooth**, close competing controller apps, and retry Find while holding Sync. Saved custom mappings are not replaced on reconnect; **Use Recommended Mapping** in Configure is the explicit reset-to-preset action.
-
-<img width="968" height="1082" alt="Screenshot 2026-09-19 at 1 58 43 PM" src="https://github.com/user-attachments/assets/9a0c2938-4f14-400e-b2d2-bde3cde324b3" />
-
-
-### Build from source
-
-<details>
-<summary>Build and launch the controller-enabled app on your Mac</summary>
-
-Use macOS 15+, [Xcode](https://developer.apple.com/xcode/) 26+ with Swift 6.2+, and [Homebrew](https://brew.sh/). Open Xcode once to finish setup and select it under **Xcode > Settings > Locations > Command Line Tools**. On Apple Silicon, use a native Terminal and native Homebrew; avoid Rosetta.
-
-Run these commands in Terminal:
+To build locally, use macOS 15+, Xcode 26+ with Swift 6.2+, and Homebrew. Open Xcode once to finish setup and select its Command Line Tools. On Apple Silicon, use a native Terminal and Homebrew rather than Rosetta.
 
 ```sh
 brew install cmake ninja nasm automake libtool qt@6
-git clone --recurse-submodules https://github.com/jmonster/dolphin.git dolphin-switch2kit
+git clone --branch feature/switch2kit-desktop-platforms --recurse-submodules https://github.com/jmonster/dolphin.git dolphin-switch2kit
 cd dolphin-switch2kit
 cmake -S . -B build-switch2kit -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
@@ -68,17 +28,55 @@ cmake --build build-switch2kit --target dolphin-emu --parallel 3
 open build-switch2kit/Binaries/DolphinQt.app
 ```
 
-This follows the native workflow's build options, including using OpenGL rather than Vulkan. The clone includes the pinned Switch2Kit dependency; do not apply the SDK's separate emulator patches to this fork. The resulting app is **build-switch2kit/Binaries/DolphinQt.app**. Once it opens, follow [Connect and play](#connect-and-play).
+Move `build-switch2kit/Binaries/DolphinQt.app` to Applications and reopen that same app for later sessions. You do not need to pair the controller in macOS Bluetooth Settings first: in Dolphin's **Switch 2 Controllers** section, click **Find Controllers**, then hold Sync. Discovery only starts through Find or the opt-in **Automatically connect** setting; Sync alone does not start a stopped backend.
 
-For later launches, reopen that app. The usual upstream build instructions below leave `ENABLE_SWITCH2KIT` off unless you explicitly enable it.
+On macOS 15 or newer, use [Native Switch2Kit builds](https://github.com/jmonster/dolphin/actions/workflows/native-switch2kit.yml): **Dolphin-Switch2Kit-arm64** for Apple Silicon, or **Dolphin-Switch2Kit-x86_64** for Intel. Extract the downloaded artifact ZIP, then the `Dolphin-Switch2Kit-<architecture>.zip` inside it. Move `DolphinQt.app` to Applications and open it. Enable Bluetooth and allow Dolphin's Bluetooth request. A denied permission can be changed under **System Settings > Privacy & Security > Bluetooth**.
 
-</details>
+The development app is ad-hoc signed, not notarized. Use Apple's [per-app Open Anyway procedure](https://support.apple.com/en-us/102445) only for a source you trust; do not disable Gatekeeper globally.
 
-See the [full Switch2Kit controller guide](Docs/Switch2Kit.md) for custom mappings, profile backups, multiplayer, rumble, reconnection, and testing limits. Automated build/launch checks do not establish physical-controller or gameplay acceptance. Switch2Kit support in this fork is macOS-only; the SDK's experimental Linux work is separate.
+### Linux
+
+Use Ubuntu 24.04 x86-64 with a desktop session, graphics drivers, a powered Bluetooth LE adapter, the running BlueZ service and normal system-bus access. Install the distribution runtime prerequisites listed in the [Linux guide](Docs/Switch2Kit.md#linux). Use [Switch2Kit Linux application builds](https://github.com/jmonster/dolphin/actions/workflows/switch2kit-linux.yml), artifact **Dolphin-Switch2Kit-linux-x86_64**. Extract the outer download ZIP, then run:
+
+```sh
+tar -xzf Dolphin-Switch2Kit-linux-x86_64.tar.gz
+./Dolphin-Switch2Kit-linux-x86_64/bin/dolphin-emu
+```
+
+Keep the whole extracted directory, including `bin/Sys`, `lib` and `share/Switch2KitNotices`. The packaged Swift runtime does not require a Swift installation or `LD_LIBRARY_PATH` override. This is not a universal Linux/AppImage package; system desktop libraries and drivers are still required.
+
+### Windows
+
+Use Windows 11 x64 for the experimental desktop instructions, with Bluetooth LE enabled, its adapter driver, graphics drivers and the Microsoft Visual C++ x64 runtime. Native CI uses Windows Server runners; physical Windows 11 controller acceptance is not claimed. Use [Switch2Kit Windows application builds](https://github.com/jmonster/dolphin/actions/workflows/switch2kit-windows.yml), artifact **Dolphin-Switch2Kit-windows-x86_64**. Extract the outer artifact ZIP, then `Dolphin-Switch2Kit-windows-x86_64.zip` inside it. Open `Dolphin-Switch2Kit-windows-x86_64/Dolphin.exe`.
+
+Keep its DLLs, `Sys`, Qt plugins and `Switch2KitNotices` together. The package includes the selected Swift runtime; do not install Swift or add a compiler directory to PATH merely to launch it. Do not run Dolphin as administrator or disable SmartScreen/antivirus to bypass a failure. See the [Windows guide](Docs/Switch2Kit.md#windows) for prerequisites and the source fallback.
+
+### Connect and play
+
+1. Close other apps or consoles managing this controller. In Dolphin, open **Controllers** (Controller Settings). In the **Switch 2 Controllers** section, click **Find Controllers**, and hold the controller's **Sync** button until its player lights sweep. Allow any legitimate Bluetooth access prompt. Discovery lasts 60 seconds; click Find again to retry. Bluetooth Settings power/access and Dolphin's discovery are separate; no global permission or pairing bypass is required.
+2. Beside the desired **GameCube port**, select the physical **Switch2Kit GameCube** or **Switch2Kit Pro Controller 2**. Dolphin selects **Standard Controller** and applies recommended controls and rumble. Do not select **GameCube Adapter for Wii U** mode for these wireless controllers.
+3. Open that port's **Configure** window. Verify presses/releases, sticks, D-pad, rumble and triggers, then open your GameCube game. NSO GameCube L/R analog travel and full clicks are independent; Pro ZL/ZR are digital and cannot reproduce an analog squeeze.
+
+Reopen the same extracted application on later launches. Saved physical assignments and custom mappings persist. Enable **Automatically connect** in the **Switch 2 Controllers** section for Dolphin's opt-in reconnection policy; it is off by default, so otherwise use Find again. **Disconnect All** in that section stops the backend without deleting mappings. Explicit **Use Recommended Mapping** and slot replacement preserve the existing confirmation/backup behavior; discovery does not silently replace custom bindings.
+
+For Wii games, configure an **Emulated Wii Remote** and its SDL input normally; the GameCube-port shortcut does not configure Wii motion. Discover each Joy-Con 2 half with Find/Sync and map each desired device manually. Do not assume a paired virtual controller or calibrated motion is created automatically. The [controller guide](Docs/Switch2Kit.md#controller-differences-and-motion) explains these distinctions.
+
+<img width="968" height="1082" alt="Screenshot 2026-09-19 at 1 58 43 PM" src="https://github.com/user-attachments/assets/9a0c2938-4f14-400e-b2d2-bde3cde324b3" />
+
+### Build from source
+
+The [build guide](Docs/Switch2Kit.md#build-from-source) contains complete platform prerequisites and commands. Clone the implementation branch while the PR is unmerged:
+
+```sh
+git clone --branch feature/switch2kit-desktop-platforms --recurse-submodules https://github.com/jmonster/dolphin.git dolphin-switch2kit
+cd dolphin-switch2kit
+```
+
+Do not apply the SDK's separate pinned-upstream patches to this maintained fork. Ordinary upstream-style builds below leave Switch2Kit disabled unless requested. Linux and Windows remain experimental; automated build/launch checks do not establish physical pairing, rumble, reconnect or gameplay acceptance.
 
 ## Upstream Dolphin documentation
 
-The information below describes Dolphin generally, including builds without this fork's Switch2Kit feature. Controller-enabled builds have the macOS 15+ requirements above.
+The information below describes Dolphin generally, including builds without this fork's Switch2Kit feature. Controller-enabled builds use the platform requirements above.
 
 [Homepage](https://dolphin-emu.org/) | [Project Site](https://github.com/dolphin-emu/dolphin) | [Buildbot](https://dolphin.ci/) | [Forums](https://forums.dolphin-emu.org/) | [Wiki](https://wiki.dolphin-emu.org/) | [GitHub Wiki](https://github.com/dolphin-emu/dolphin/wiki) | [Issue Tracker](https://bugs.dolphin-emu.org/projects/emulator/issues) | [Coding Style](https://github.com/dolphin-emu/dolphin/blob/master/Contributing.md) | [Transifex Page](https://app.transifex.com/dolphinemu/dolphin-emu/dashboard/) | [Analytics](https://mon.dolphin-emu.org/)
 

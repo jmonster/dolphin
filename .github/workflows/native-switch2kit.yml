@@ -14,15 +14,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Check controller UI formatting
+      - name: Check exact-width SDL adapter capacity
         run: |
-          python3 -m venv "$RUNNER_TEMP/formatter"
-          "$RUNNER_TEMP/formatter/bin/pip" install 'clang-format==21.1.8'
-          "$RUNNER_TEMP/formatter/bin/clang-format" --dry-run --Werror \
-            Source/Core/DolphinQt/Config/ControllersPane.cpp \
-            Source/Core/DolphinQt/Config/GamecubeControllersWidget.cpp \
-            Source/Core/DolphinQt/Config/Mapping/MappingWindow.cpp \
-            Source/Core/DolphinQt/Config/Mapping/Switch2KitMapping.cpp
+          git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
+          CXX=clang++ python3 Tools/test_switch2kit_capacity.py
+          CXX=g++ python3 Tools/test_switch2kit_capacity.py
       - run: python3 Tools/test_switch2kit.py
       - run: python3 Tools/test_switch2kit_autoconnect.py
       - run: python3 Tools/test_switch2kit_mapping.py --sanitize
@@ -77,7 +73,7 @@ jobs:
         run: brew install cmake ninja nasm automake libtool qt@6
       - name: Check source pin and integration
         run: |
-          test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = a9d43b1f63d94f8844755a510bf6ecc876bc8c51
+          test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = "$(git ls-tree HEAD Externals/Switch2Kit | awk '{print $3}')"
           python3 Tools/test_switch2kit.py
           python3 Tools/test_switch2kit_autoconnect.py
           python3 Tools/test_switch2kit_host.py --sanitize
