@@ -64,6 +64,43 @@ class AutomaticConnectionWiringTests(unittest.TestCase):
         self.assertIn("s_auto_start_pending = false;", stop)
         self.assertIn("s_started = false;", stop)
 
+    def test_normal_test_build_does_not_require_the_backend(self):
+        # Evaluate the real parent registration with empty upstream targets;
+        # this checks CTest membership, not an emulator build or native behavior.
+        def catalogue(source, build, *flags):
+            subprocess.run(['cmake', '-S', str(source), '-B', str(build), *flags],
+                           check=True, capture_output=True, timeout=15)
+            result = subprocess.run(['ctest', '--test-dir', str(build), '--show-only=json-v1'],
+                                    check=True, capture_output=True, text=True, timeout=5)
+            return {test['name']: test.get('command')
+                    for test in json.loads(result.stdout)['tests']}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            expected = catalogue(ROOT / 'Source/UnitTests/Switch2Kit', root / 'standalone')
+            self.assertTrue(expected, 'The focused test catalogue must not be empty')
+            for name in ('Common', 'Core', 'VideoCommon', 'Switch2Kit'):
+                (root / name).mkdir()
+                (root / name / 'CMakeLists.txt').write_text('')
+            (root / 'Switch2Kit/CMakeLists.txt').write_text(
+                f'include("{(ROOT / "Source/UnitTests/Switch2Kit/CMakeLists.txt").as_posix()}")\n')
+            for name in ('UnitTestsMain.cpp', 'StubHost.cpp'):
+                (root / name).write_text('// Configure-only registration fixture.\n')
+            (root / 'CMakeLists.txt').write_text(
+                'cmake_minimum_required(VERSION 3.25)\n'
+                'project(TestRegistration LANGUAGES CXX)\n'
+                'set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Binaries")\n'
+                'foreach(dependency fmt::fmt gtest::gtest core uicommon)\n'
+                '  add_library(${dependency} INTERFACE IMPORTED)\n'
+                'endforeach()\n'
+                f'include("{(ROOT / "Source/UnitTests/CMakeLists.txt").as_posix()}")\n')
+            for enabled in ('OFF', 'ON'):
+                with self.subTest(ENABLE_SWITCH2KIT=enabled):
+                    registered = catalogue(root, root / 'normal', f'-DENABLE_SWITCH2KIT={enabled}')
+                    self.assertIn('tests', registered, 'Keep the upstream test registration')
+                    self.assertEqual(expected, {name: command for name, command in registered.items()
+                                                if name.startswith('Switch2Kit.')})
+
     def test_ci_retains_regressions(self):
         # Check CTest's actual commands, not copies of command names in comments.
         with tempfile.TemporaryDirectory() as build:

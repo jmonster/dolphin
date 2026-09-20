@@ -10,6 +10,9 @@ is not automatically inherited by this fork; do not claim otherwise.
 
 The existing `unittests` target remains the baseline. Register our focused tests
 with CTest in `Source/UnitTests/Switch2Kit`, not a parallel Python test runner.
+On supported POSIX hosts they belong to the ordinary `ENABLE_TESTS` suite even
+with `ENABLE_SWITCH2KIT=OFF`. Never add a separate test opt-in or gate the fixture
+regressions on the application backend; they do not need Swift or Bluetooth.
 The same registration can be configured alone for fast iteration:
 
 ```sh

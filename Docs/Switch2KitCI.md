@@ -6,13 +6,14 @@ Dolphin's checked-in unit-test system is Google Test plus CMake/CTest, under
 `Source/UnitTests`. Its external Buildbot infrastructure is not a GitHub Actions
 workflow that a fork inherits. This change preserves the existing upstream
 `tests` / `unittests` targets and all their tests. The only extension to the parent
-unit-test CMake file is the optional Switch2Kit subdirectory.
+unit-test CMake file registers the Switch2Kit subdirectory on POSIX hosts.
+There is no Switch2Kit-specific test opt-in.
 
 The full Linux backend-disabled build now uses `ENABLE_TESTS=ON` and runs the
-ordinary upstream `unittests` target in that same build tree. This checks the
-unmodified emulator baseline without a second standalone core build. The image
-still contains no Swift, and its existing no-SDK/runtime-dependency assertions
-remain mandatory.
+ordinary `unittests` target, including the Switch2Kit regressions, in that same
+build tree. This checks the upstream baseline and our additions together without
+a second standalone core build. The image still contains no Swift, and its
+existing no-SDK/runtime-dependency assertions remain mandatory.
 
 ## Fast iteration uses the same CTest registration
 
@@ -25,8 +26,9 @@ ctest --test-dir build-switch2kit-tests --output-on-failure --no-tests=error
 This executes the existing mapping and host C++ harnesses with ASan/UBSan, real
 CMake guard and deployment fixtures, connection-consent checks, and the real
 adapter source's type/capacity probes under both Linux compilers. The same tests
-are registered in ordinary POSIX builds with both ENABLE_TESTS and
-ENABLE_SWITCH2KIT enabled. There is no separate Python suite runner or PyYAML
+run in ordinary POSIX test builds under `ENABLE_TESTS`, regardless of
+`ENABLE_SWITCH2KIT`. The existing Windows exclusion reflects the POSIX compiler
+harnesses, not a user-selectable test option. There is no separate runner or PyYAML
 workflow-policy dependency. A local fixture pass does not qualify the actual SDK,
 Qt UI, complete application, native packaging or Bluetooth hardware.
 
