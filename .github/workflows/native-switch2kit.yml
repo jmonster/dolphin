@@ -1,3 +1,4 @@
+# This is the only automatic workflow. Budgets are enforced by Tools/check_ci_policy.py.
 name: Native Switch2Kit
 on:
   pull_request:
@@ -9,126 +10,25 @@ concurrency:
   cancel-in-progress: true
 jobs:
   wiring:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - name: Check exact-width SDL adapter capacity
-        run: |
-          git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
-          CXX=clang++ python3 Tools/test_switch2kit_capacity.py
-          CXX=g++ python3 Tools/test_switch2kit_capacity.py
-      - run: python3 Tools/test_switch2kit.py
-      - run: python3 Tools/test_switch2kit_autoconnect.py
-      - run: python3 Tools/test_switch2kit_mapping.py --sanitize
-      - name: Execute host lifecycle and identity regressions with sanitizers
-        run: python3 Tools/test_switch2kit_host.py --sanitize
-  sdk-regressions:
-    if: github.repository == 'jmonster/dolphin'
-    runs-on: macos-15
-    timeout-minutes: 25
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      PYTHONPATH: ${{ runner.temp }}/ci-policy
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        timeout-minutes: 1
         with:
           persist-credentials: false
-      - name: Initialize exactly the pinned SDK and Dolphin SDL
-        run: git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
-      - name: Exercise the real SDK and in-process SDL adapter without hardware
+          fetch-depth: 1
+          submodules: false
+      - name: Enforce the CI cost policy before fetching dependencies
+        timeout-minutes: 1
         run: |
-          set -o pipefail
-          swift test --package-path Externals/Switch2Kit 2>&1 | tee switch2kit-sdk-tests.log
-          bash Externals/Switch2Kit/tests/rumble/run.sh 2>&1 | tee switch2kit-motor-tests.log
-          S2K_SDL_SOURCE="$PWD/Externals/SDL/SDL" \
-            bash Externals/Switch2Kit/tests/sdl-inprocess/verify.sh \
-            2>&1 | tee switch2kit-sdl-tests.log
-      - name: SDK test diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: Switch2Kit-sdk-regressions
-          path: switch2kit-*-tests.log
-  macos:
-    if: github.repository == 'jmonster/dolphin'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            arch: arm64
-          - os: macos-15-intel
-            arch: x86_64
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          submodules: recursive
-          persist-credentials: false
-      - name: Install build dependencies
-        run: brew install cmake ninja nasm automake libtool qt@6
-      - name: Check source pin and integration
-        run: |
-          test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = "$(git ls-tree HEAD Externals/Switch2Kit | awk '{print $3}')"
-          python3 Tools/test_switch2kit.py
-          python3 Tools/test_switch2kit_autoconnect.py
-          python3 Tools/test_switch2kit_host.py --sanitize
-          python3 Tools/test_switch2kit_mapping.py --sanitize
-      - name: Build the complete application
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          set -o pipefail
-          test "$(uname -m)" = "$ARCH"
-          cmake -S . -B build-switch2kit -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
-            -DENABLE_SWITCH2KIT=ON -DENABLE_QT=ON -DENABLE_SDL=ON \
-            -DUSE_SYSTEM_SDL3=OFF \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
-            -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON \
-            2>&1 | tee switch2kit-configure.log
-          cmake --build build-switch2kit --target dolphin-emu --parallel 3 \
-            2>&1 | tee switch2kit-build.log
-      - name: Inspect and archive application
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          app=build-switch2kit/Binaries/DolphinQt.app
-          test -d "$app"
-          test -f "$app/Contents/Frameworks/libSwitch2KitC.dylib"
-          /usr/libexec/PlistBuddy -c 'Print :NSBluetoothAlwaysUsageDescription' "$app/Contents/Info.plist"
-          lipo "$app/Contents/MacOS/DolphinQt" -verify_arch "$ARCH"
-          lipo "$app/Contents/Frameworks/libSwitch2KitC.dylib" -verify_arch "$ARCH"
-          test -f "$app/Contents/Resources/Sys/Profiles/GCPad/Switch2Kit GameCube.ini"
-          test -f "$app/Contents/Resources/Sys/Profiles/GCPad/Switch2Kit Pro Controller 2.ini"
-          ditto -c -k --keepParent "$app" "Dolphin-Switch2Kit-$ARCH.zip"
-      - name: Launch, normally quit and relaunch the exact ZIP with build roots denied
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          python3 Tools/test_switch2kit_bundle.py "Dolphin-Switch2Kit-$ARCH.zip" \
-            --architecture "$ARCH" --report switch2kit-validation.json
-      - name: Application artifact (not hardware-qualified or notarized)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: Dolphin-Switch2Kit-${{ matrix.arch }}
-          path: |
-            Dolphin-Switch2Kit-${{ matrix.arch }}.zip
-            switch2kit-validation.json
-          if-no-files-found: error
-      - name: Build diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: Switch2Kit-${{ matrix.arch }}-diagnostics
-          path: |
-            switch2kit-*.log
-            switch2kit-*.sample
-            switch2kit-validation.json
-            build-switch2kit/CMakeCache.txt
-            build-switch2kit/CMakeFiles/CMakeConfigureLog.yaml
+          python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --retries 1 --timeout 10 --target "$RUNNER_TEMP/ci-policy" PyYAML==6.0.3
+          python3 Tools/check_ci_policy.py
+      - name: Fetch only the pinned SDK and SDL, without their history
+        timeout-minutes: 1
+        run: git submodule update --init --depth 1 Externals/Switch2Kit Externals/SDL/SDL
+      - name: Run the fast regressions (60 seconds total, 20 seconds per command)
+        timeout-minutes: 2
+        run: python3 Tools/run_fast_tests.py

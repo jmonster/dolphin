@@ -1,17 +1,27 @@
+# Manual qualification/artifacts only. Never add automatic triggers; see AGENTS.md.
 name: Switch2Kit Linux application
 on:
-  pull_request:
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Choose ONE complete application build (can take 25 minutes)'
+        required: true
+        type: choice
+        default: enabled
+        options:
+          - enabled
+          - disabled
 permissions:
   contents: read
 concurrency:
-  group: switch2kit-linux-${{ github.ref }}
+  group: switch2kit-linux-${{ github.ref }}-${{ inputs.target }}
   cancel-in-progress: true
 jobs:
   linux:
+    if: inputs.target == 'enabled'
     runs-on: ubuntu-24.04
     container: swift:6.2.1-noble
-    timeout-minutes: 90
+    timeout-minutes: 45
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
@@ -70,11 +80,12 @@ jobs:
           retention-days: 7
 
   disabled:
+    if: inputs.target == 'disabled'
     # A complete ordinary application build in an image without Swift. This is
     # not a controller-enabled artifact and does not use the SDK build helper.
     runs-on: ubuntu-24.04
     container: ubuntu:24.04
-    timeout-minutes: 90
+    timeout-minutes: 45
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:

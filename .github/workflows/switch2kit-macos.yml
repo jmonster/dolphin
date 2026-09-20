@@ -1,0 +1,120 @@
+# Full native qualification is opt-in, never a pull-request test. See AGENTS.md.
+name: Switch2Kit macOS qualification
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Explicit native qualification (application builds can take 45 minutes)'
+        required: true
+        type: choice
+        default: sdk
+        options:
+          - sdk
+          - arm64
+          - x86_64
+permissions:
+  contents: read
+concurrency:
+  group: switch2kit-macos-${{ github.ref }}-${{ inputs.target }}
+  cancel-in-progress: true
+jobs:
+  sdk-regressions:
+    if: inputs.target == 'sdk'
+    runs-on: macos-15
+    timeout-minutes: 5
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Initialize exactly the pinned SDK and Dolphin SDL
+        run: git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
+      - name: Exercise the real SDK and in-process SDL adapter without hardware
+        run: |
+          set -o pipefail
+          swift test --package-path Externals/Switch2Kit 2>&1 | tee switch2kit-sdk-tests.log
+          bash Externals/Switch2Kit/tests/rumble/run.sh 2>&1 | tee switch2kit-motor-tests.log
+          S2K_SDL_SOURCE="$PWD/Externals/SDL/SDL" \
+            bash Externals/Switch2Kit/tests/sdl-inprocess/verify.sh \
+            2>&1 | tee switch2kit-sdl-tests.log
+      - name: SDK test diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Switch2Kit-sdk-regressions
+          path: switch2kit-*-tests.log
+  macos:
+    if: inputs.target == 'arm64' || inputs.target == 'x86_64'
+    runs-on: ${{ inputs.target == 'arm64' && 'macos-15' || 'macos-15-intel' }}
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install build dependencies
+        run: brew install cmake ninja nasm automake libtool qt@6
+      - name: Check source pin and integration
+        run: |
+          test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = "$(git ls-tree HEAD Externals/Switch2Kit | awk '{print $3}')"
+          python3 Tools/test_switch2kit.py
+          python3 Tools/test_switch2kit_autoconnect.py
+          python3 Tools/test_switch2kit_host.py --sanitize
+          python3 Tools/test_switch2kit_mapping.py --sanitize
+      - name: Build the complete application
+        env:
+          ARCH: ${{ inputs.target }}
+        run: |
+          set -o pipefail
+          test "$(uname -m)" = "$ARCH"
+          cmake -S . -B build-switch2kit -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
+            -DENABLE_SWITCH2KIT=ON -DENABLE_QT=ON -DENABLE_SDL=ON \
+            -DUSE_SYSTEM_SDL3=OFF \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+            -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON \
+            2>&1 | tee switch2kit-configure.log
+          cmake --build build-switch2kit --target dolphin-emu --parallel 3 \
+            2>&1 | tee switch2kit-build.log
+      - name: Inspect and archive application
+        env:
+          ARCH: ${{ inputs.target }}
+        run: |
+          app=build-switch2kit/Binaries/DolphinQt.app
+          test -d "$app"
+          test -f "$app/Contents/Frameworks/libSwitch2KitC.dylib"
+          /usr/libexec/PlistBuddy -c 'Print :NSBluetoothAlwaysUsageDescription' "$app/Contents/Info.plist"
+          lipo "$app/Contents/MacOS/DolphinQt" -verify_arch "$ARCH"
+          lipo "$app/Contents/Frameworks/libSwitch2KitC.dylib" -verify_arch "$ARCH"
+          test -f "$app/Contents/Resources/Sys/Profiles/GCPad/Switch2Kit GameCube.ini"
+          test -f "$app/Contents/Resources/Sys/Profiles/GCPad/Switch2Kit Pro Controller 2.ini"
+          ditto -c -k --keepParent "$app" "Dolphin-Switch2Kit-$ARCH.zip"
+      - name: Launch, normally quit and relaunch the exact ZIP with build roots denied
+        env:
+          ARCH: ${{ inputs.target }}
+        run: |
+          python3 Tools/test_switch2kit_bundle.py "Dolphin-Switch2Kit-$ARCH.zip" \
+            --architecture "$ARCH" --report switch2kit-validation.json
+      - name: Application artifact (not hardware-qualified or notarized)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Dolphin-Switch2Kit-${{ inputs.target }}
+          path: |
+            Dolphin-Switch2Kit-${{ inputs.target }}.zip
+            switch2kit-validation.json
+          if-no-files-found: error
+      - name: Build diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Switch2Kit-${{ inputs.target }}-diagnostics
+          path: |
+            switch2kit-*.log
+            switch2kit-*.sample
+            switch2kit-validation.json
+            build-switch2kit/CMakeCache.txt
+            build-switch2kit/CMakeFiles/CMakeConfigureLog.yaml

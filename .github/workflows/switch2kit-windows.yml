@@ -1,6 +1,6 @@
+# Manual qualification/artifacts only. Never add automatic triggers; see AGENTS.md.
 name: Switch2Kit Windows application
 on:
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,7 +10,7 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-2025-vs2026
-    timeout-minutes: 120
+    timeout-minutes: 45
     env:
       VCPKG_MAX_CONCURRENCY: 3
     steps:

@@ -76,12 +76,20 @@ An automated callback test is not a physical rumble test.
 
 ## Applications and prerequisites
 
-For development artifacts, open this repository's **Actions** tab and choose a successful
-run for the revision being tested. The workflows and application artifacts are:
+Pull requests run only the fast Linux regression gate; they do not build applications or
+upload artifacts. Its suite is limited to 60 seconds, with a 3-minute job ceiling including
+setup. See [AGENTS.md](../AGENTS.md) for the enforced CI policy and local test command.
+
+Application qualification is expensive and **manual only**. For a development artifact,
+open this repository's **Actions** tab, choose the platform workflow below, select **Run
+workflow** and the revision to qualify. On macOS, select `arm64` or `x86_64` for an app;
+`sdk` runs only SDK checks. On Linux, select `enabled` for the controller app or `disabled`
+for the separate no-Swift qualification. Each dispatch selects one configuration, not a
+build matrix. Download only from a successful run for the exact revision being tested.
 
 | Platform | Workflow | Artifact |
 | --- | --- | --- |
-| macOS | [Native Switch2Kit](../.github/workflows/native-switch2kit.yml) | `Dolphin-Switch2Kit-arm64` or `Dolphin-Switch2Kit-x86_64` |
+| macOS | [Switch2Kit macOS qualification](../.github/workflows/switch2kit-macos.yml) | `Dolphin-Switch2Kit-arm64` or `Dolphin-Switch2Kit-x86_64` |
 | Linux | [Switch2Kit Linux application](../.github/workflows/switch2kit-linux.yml) | `Dolphin-Switch2Kit-linux-x86_64` |
 | Windows | [Switch2Kit Windows application](../.github/workflows/switch2kit-windows.yml) | `Dolphin-Switch2Kit-windows-x86_64` |
 
@@ -198,7 +206,8 @@ controller absent after a search, check adapter power/access, Sync mode, competi
 connections and the displayed status, then retry Find. Installing a dashboard or replacing
 system SDL is not a remedy.
 
-The workflows check builds and extracted-package launch using private test settings.
+The manually requested qualification workflows check builds and extracted-package
+launch using private test settings. A fast PR check is not application qualification.
 They do not establish pristine first-use dialogs, downloaded-app approval, Bluetooth
 hardware or gameplay. Mapping and host regressions cover cancellation, backup/rollback,
 identity, saved consent, explicit stop and shutdown ordering; keep those checks when
