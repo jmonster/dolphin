@@ -34,6 +34,18 @@ jobs:
       # Configure probes and standalone sanitizer/SDK tests must compile directly.
       S2K_CI_COMPILER_CACHE: sccache
     steps:
+      - name: Restore Intel runner CPU availability
+        if: matrix.arch == 'x86_64'
+        run: |
+          set -euo pipefail
+          # The retained runner profile showed PerfPowerServices using a core.
+          # Use the runner-images workaround, scoped to this disposable Intel VM.
+          # https://github.com/actions/runner-images/issues/13358
+          ps -axo pid,pcpu,comm | sort -rn -k2 | sed -n '1,15p'
+          sudo defaults -currentHost write /Library/Preferences/com.apple.powerlogd SMCMonitorCadence 0
+          if pgrep -x PerfPowerServices >/dev/null; then
+            sudo killall PerfPowerServices
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: false
@@ -45,10 +57,10 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v3-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: s2k-objects-v4-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            s2k-objects-v3-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
-            s2k-objects-v3-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+            s2k-objects-v4-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v4-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         id: compiler-cache
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
@@ -116,7 +128,9 @@ jobs:
             -DQt6_DIR="$S2K_QT_PREFIX/lib/cmake/Qt6" \
             -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON \
             2>&1 | tee switch2kit-configure.log
-          cmake --build build-switch2kit --target dolphin-emu --parallel "$(sysctl -n hw.logicalcpu)" \
+          jobs="$(sysctl -n hw.logicalcpu)"
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then jobs=$((jobs + 2)); fi
+          cmake --build build-switch2kit --target dolphin-emu_autogen dolphin-emu --parallel "$jobs" \
             2>&1 | tee switch2kit-build.log
       - name: Compiler cache statistics
         if: always()

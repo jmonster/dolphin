@@ -51,6 +51,21 @@ if(CMAKE_HOST_WIN32 AND MSVC AND NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflo
   message(STATUS "Native CI Windows linker: ${CMAKE_LINKER_LLD}")
 endif()
 
+# Clang's native ELF linker avoids the serial GNU ld tail for the complete
+# Linux application and upstream test executable. Keep real executable feature
+# probes, and leave explicit artifacts, nested SDK builds and GCC unchanged.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+   AND DEFINED ENV{S2K_CI_LINUX_LINKER}
+   AND NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
+  set(_switch2kit_linux_lld "$ENV{S2K_CI_LINUX_LINKER}")
+  if(NOT IS_ABSOLUTE "${_switch2kit_linux_lld}" OR NOT EXISTS "${_switch2kit_linux_lld}")
+    message(FATAL_ERROR "Native CI requires the explicitly selected Linux linker")
+  endif()
+  add_link_options("-fuse-ld=${_switch2kit_linux_lld}")
+  list(APPEND CMAKE_REQUIRED_LINK_OPTIONS "-fuse-ld=${_switch2kit_linux_lld}")
+  message(STATUS "Native CI Linux linker: ${_switch2kit_linux_lld}")
+endif()
+
 # Use a CI-specific variable, not CMAKE_*_COMPILER_LAUNCHER in the job's
 # environment: those standard variables also reach every nested SDK/fixture
 # configuration and try_compile project. Clearing a normal variable alone does

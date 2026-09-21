@@ -21,6 +21,7 @@ jobs:
       NINJA_STATUS: '[%f/%t %r running, %e sec] '
       # Configure probes and standalone sanitizer/SDK tests must compile directly.
       S2K_CI_COMPILER_CACHE: sccache
+      S2K_CI_LINUX_LINKER: /usr/bin/ld.lld-19
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -29,7 +30,7 @@ jobs:
       - name: Install native dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential clang clang-19 cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
+          apt-get install -y --no-install-recommends build-essential clang clang-19 lld-19 cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
           git config --global --add safe.directory "$PWD"
       - name: Fetch and verify native gitlinks in parallel
         run: python3 Tools/checkout_native.py
@@ -44,10 +45,10 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
-            s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+            s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         id: compiler-cache
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
@@ -57,7 +58,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          S2K_BUILD_JOBS="$(nproc)" bash Tools/build-switch2kit-linux.sh \
+          jobs="$(nproc)"
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then jobs=$((jobs + 2)); fi
+          S2K_BUILD_JOBS="$jobs" bash Tools/build-switch2kit-linux.sh \
             -DCMAKE_C_COMPILER=/usr/bin/clang-19 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-19 \
             "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
             2>&1 | tee linux-build.log
@@ -131,6 +134,7 @@ jobs:
       NINJA_STATUS: '[%f/%t %r running, %e sec] '
       # Configure probes and standalone sanitizer/SDK tests must compile directly.
       S2K_CI_COMPILER_CACHE: sccache
+      S2K_CI_LINUX_LINKER: /usr/bin/ld.lld-19
     steps:
       - name: Check shared memory before installing dependencies or compiling
         shell: bash
@@ -145,7 +149,7 @@ jobs:
       - name: Install ordinary native dependencies without Swift
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates build-essential clang clang-19 cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus
+          apt-get install -y --no-install-recommends git ca-certificates build-essential clang clang-19 lld-19 cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus
           if command -v swift || command -v swiftc; then
             echo 'The backend-disabled qualification image must not contain Swift.' >&2
             exit 1
@@ -169,10 +173,10 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
-            s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+            s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         id: compiler-cache
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
@@ -190,8 +194,11 @@ jobs:
             -DENABLE_SWITCH2KIT=OFF -DENABLE_SDL=ON -DENABLE_QT=ON \
             -DUSE_SYSTEM_SDL3=OFF -DENABLE_TESTS=ON -DENABLE_VULKAN=OFF \
             -DENABLE_AUTOUPDATE=OFF 2>&1 | tee disabled-configure.log
-          # Let Ninja schedule the application and all upstream test objects together.
-          cmake --build build-switch2kit --target dolphin-emu tests --parallel "$(nproc)" 2>&1 | tee disabled-build.log
+          # Submit the expensive emitter case and moc first, in the same full
+          # application/test graph. They must not become a serial compile tail.
+          jobs="$(nproc)"
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then jobs=$((jobs + 2)); fi
+          cmake --build build-switch2kit --target x64EmitterTest dolphin-emu_autogen tests dolphin-emu --parallel "$jobs" 2>&1 | tee disabled-build.log
           # Building tests does not execute them; retain the complete CTest target.
           cmake --build build-switch2kit --target unittests --parallel "$(nproc)" 2>&1 | tee upstream-unittests.log
           ldd build-switch2kit/Binaries/dolphin-emu | tee disabled-dependencies.log

@@ -50,13 +50,22 @@ cmake -S . -B build-switch2kit-windows -G Ninja -DCMAKE_BUILD_TYPE=Release `
     -DENABLE_TESTS=OFF -DENABLE_CLI_TOOL=OFF -DENABLE_AUTOUPDATE=OFF `
     "-DSWITCH2KIT_SWIFT=$swift" "-DSWITCH2KIT_SWIFTC=$swiftc" @CMakeArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-# Compile the real Swift/C++ WinRT library first. Fail on toolchain/SDK
-# incompatibility before spending time on Dolphin's other dependencies; do not
-# bypass the Microsoft STL or Dolphin compiler guards. This target is reused by
-# the application build, with the same SwiftPM configuration and scratch path.
-cmake --build build-switch2kit-windows --target Switch2KitCBuild --parallel ([Environment]::ProcessorCount)
+# Preserve the developer/explicit-artifact SDK-first failure path. Automatic
+# builds request the SDK and complete application in the same Ninja graph, so
+# independent native objects can compile while Swift runs. The existing graph
+# still orders every SDK consumer and staging step, and either failure is fatal.
+$parallelTargets = @()
+$buildJobs = [Environment]::ProcessorCount
+if ($env:GITHUB_ACTIONS -eq 'true' -and $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') {
+    $parallelTargets = @('dolphin-emu_autogen', 'dolphin-emu')
+    # Match Ninja's normal CPU+2 queue headroom on the same standard runner.
+    $buildJobs += 2
+}
+cmake --build build-switch2kit-windows --target Switch2KitCBuild @parallelTargets --parallel $buildJobs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-cmake --build build-switch2kit-windows --target dolphin-emu --parallel ([Environment]::ProcessorCount)
+# This is an incremental verification after an automatic combined build, not a
+# second SDK scratch tree or a cached application. Developer behavior is unchanged.
+cmake --build build-switch2kit-windows --target dolphin-emu --parallel $buildJobs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $app = Join-Path $PWD 'build-switch2kit-windows/Binaries/Dolphin.exe'
 if (-not (Test-Path $app) -or -not (Test-Path (Join-Path (Split-Path $app) 'Switch2KitC.dll'))) {
