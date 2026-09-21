@@ -18,6 +18,7 @@ jobs:
       # One cache archive per job, not network requests for every object.
       SCCACHE_DIR: /github/home/.cache/sccache
       SCCACHE_CACHE_SIZE: 2G
+      NINJA_STATUS: '[%f/%t %r running, %e sec] '
       # Configure probes and standalone sanitizer/SDK tests must compile directly.
       S2K_CI_COMPILER_CACHE: sccache
     steps:
@@ -117,6 +118,7 @@ jobs:
       # One cache archive per job, not network requests for every object.
       SCCACHE_DIR: /github/home/.cache/sccache
       SCCACHE_CACHE_SIZE: 2G
+      NINJA_STATUS: '[%f/%t %r running, %e sec] '
       # Configure probes and standalone sanitizer/SDK tests must compile directly.
       S2K_CI_COMPILER_CACHE: sccache
     steps:

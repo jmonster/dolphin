@@ -30,6 +30,7 @@ jobs:
       # One cache archive per job, not network requests for every object.
       SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
       SCCACHE_CACHE_SIZE: 2G
+      NINJA_STATUS: '[%f/%t %r running, %e sec] '
       # Configure probes and standalone sanitizer/SDK tests must compile directly.
       S2K_CI_COMPILER_CACHE: sccache
     steps:
@@ -71,8 +72,16 @@ jobs:
           cc="$(xcrun --find clang)"
           cxx="$(xcrun --find clang++)"
           test -x "$cc" && test -x "$cxx"
-          printf 'CC=%s\nCXX=%s\nOBJC=%s\nOBJCXX=%s\n' \
-            "$cc" "$cxx" "$cc" "$cxx" >> "$GITHUB_ENV"
+          # Direct Xcode compiler paths do not inherit xcrun's SDK selection.
+          # Standalone sanitizer tests need the same headers and libraries too.
+          sdk="$(xcrun --sdk macosx --show-sdk-path)"
+          test -d "$sdk"
+          printf 'CC=%s\nCXX=%s\nOBJC=%s\nOBJCXX=%s\nSDKROOT=%s\n' \
+            "$cc" "$cxx" "$cc" "$cxx" "$sdk" >> "$GITHUB_ENV"
+          printf '%s\n' '#include <atomic>' \
+            'int main() { std::atomic<int> value{42}; return value.load() == 42 ? 0 : 1; }' | \
+            SDKROOT="$sdk" "$cxx" -std=c++23 -x c++ - -o "$RUNNER_TEMP/s2k-toolchain-probe"
+          "$RUNNER_TEMP/s2k-toolchain-probe"
           for component in Qt6 Qt6Svg; do
             test -f "$qt_prefix/lib/cmake/$component/${component}Config.cmake" || {
               echo "::error::Missing linked Qt package: $component in $qt_prefix" >&2
@@ -95,7 +104,7 @@ jobs:
           cmake -S . -B build-switch2kit -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
-            -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
+            -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_SYSROOT="$SDKROOT" \
             -DENABLE_SWITCH2KIT=ON -DENABLE_QT=ON -DENABLE_SDL=ON \
             -DUSE_SYSTEM_SDL3=OFF \
             -DCMAKE_PREFIX_PATH="$S2K_QT_PREFIX" \

@@ -72,6 +72,7 @@ class NativeExecutionTests(unittest.TestCase):
                 int plain_value(void) { return 9; }
             ''')
             write(root, 'external.cpp', 'int external_value() { return 0; }\n')
+            write(root, 'MachineIndependent/pch.h', '#pragma once\n#include <sstream>\n')
             write(root, 'main.cpp', '''\
                 #include <fstream>
                 extern "C" int plain_value(void);
@@ -124,6 +125,7 @@ class NativeExecutionTests(unittest.TestCase):
                 set_source_files_properties(special.cpp PROPERTIES COMPILE_OPTIONS -DPER_SOURCE=1)
                 # Model a child resetting launchers, like SDL's own setup.
                 set_property(TARGET common PROPERTY CXX_COMPILER_LAUNCHER "$ENV{S2K_CI_COMPILER_CACHE}")
+                add_library(glslang STATIC external.cpp)
                 add_library(external_pch STATIC external.cpp)
                 target_precompile_headers(external_pch PRIVATE "${CMAKE_SOURCE_DIR}/Source/PCH/pch.h")
                 set_property(TARGET external_pch PROPERTY CXX_COMPILER_LAUNCHER "$ENV{S2K_CI_COMPILER_CACHE}")
@@ -215,7 +217,7 @@ class NativeExecutionTests(unittest.TestCase):
             for target in ['core', 'build_pch']:
                 self.assertEqual((root / 'build' / f'{target}.txt').read_text(), '||')
             self.assertEqual((root / 'build/ordinary.txt').read_text(),
-                             'cmake;-E;env|cmake;-E;env|ON')
+                             'cmake;-E;env|cmake;-E;env|')
 
 
 class NativePinVerificationTests(unittest.TestCase):

@@ -30,6 +30,24 @@ endif()
 message(STATUS "Native CI C Release flags: ${CMAKE_C_FLAGS_RELEASE}")
 message(STATUS "Native CI C++ Release flags: ${CMAKE_CXX_FLAGS_RELEASE}")
 
+# Keep all configure probes as real compilations AND links. On Windows, use
+# the runner's native LLVM linker for automatic smoke builds, including probes;
+# MSVC still compiles every C/C++ source and owns Dolphin's shared PCH.
+if(CMAKE_HOST_WIN32 AND MSVC AND NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
+  if(CMAKE_VERSION VERSION_LESS 3.29)
+    message(FATAL_ERROR "Native Windows CI requires CMake 3.29 or newer for LLD")
+  endif()
+  find_program(CMAKE_LINKER_LLD NAMES lld-link HINTS "$ENV{ProgramFiles}/LLVM/bin" REQUIRED)
+  set(CMAKE_C_USING_LINKER_LLD "${CMAKE_LINKER_LLD}")
+  set(CMAKE_CXX_USING_LINKER_LLD "${CMAKE_LINKER_LLD}")
+  list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CMAKE_LINKER_LLD)
+  set(CMAKE_LINKER_TYPE LLD)
+  # Test the same runtime configuration as the real application, not a separate
+  # Debug link with an incremental PDB/manifest cycle for every tiny probe.
+  set(CMAKE_TRY_COMPILE_CONFIGURATION Release)
+  message(STATUS "Native CI Windows linker: ${CMAKE_LINKER_LLD}")
+endif()
+
 # Use a CI-specific variable, not CMAKE_*_COMPILER_LAUNCHER in the job's
 # environment: those standard variables also reach every nested SDK/fixture
 # configuration and try_compile project. Clearing a normal variable alone does
@@ -56,6 +74,13 @@ endforeach()
 # Do not use unity builds (which change translation-unit boundaries), touch the
 # production sources, replace libraries, or exclude a source from compilation.
 function(switch2kit_ci_precompile_headers)
+  # The pinned shader compiler supplies its own PCH for these exact sources.
+  # Its parser headers dominated cold compilation; compile that same upstream
+  # header once, without unity builds or changing the shader compiler's sources.
+  if(TARGET glslang)
+    get_target_property(glslang_source glslang SOURCE_DIR)
+    target_precompile_headers(glslang PRIVATE "${glslang_source}/MachineIndependent/pch.h")
+  endif()
   if(MSVC)
     return()
   endif()
@@ -121,12 +146,8 @@ function(switch2kit_ci_cache_targets directory)
           C_COMPILER_LAUNCHER "${_switch2kit_c_launcher}"
           CXX_COMPILER_LAUNCHER "${_switch2kit_cxx_launcher}")
       endif()
-      if(kind MATCHES "^(STATIC_LIBRARY|OBJECT_LIBRARY)$" AND NOT manual_pch)
-        # Keep manual MSVC PCH ordering opaque to this optimization.
-        # CMake removes only unnecessary ordering edges; generated sources,
-        # custom commands and explicit dependencies remain prerequisites.
-        set_property(TARGET ${target} PROPERTY OPTIMIZE_DEPENDENCIES ON)
-      endif()
+      # Preserve upstream dependency/PCH ordering rather than retaining an
+      # unproven eager-scheduling optimization on the standard runners.
       if(NOT MSVC AND NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
         # Upstream appends -ggdb even in Release. Keep line-level backtraces,
         # without emitting full type debug information for every smoke object.
