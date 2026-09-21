@@ -15,7 +15,12 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 10 }}
     env:
       DEBIAN_FRONTEND: noninteractive
-      SCCACHE_GHA_ENABLED: 'true'
+      # One cache archive per job, not network requests for every object.
+      SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
+      SCCACHE_CACHE_SIZE: 2G
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: submodule.fetchJobs
+      GIT_CONFIG_VALUE_0: 8
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
@@ -26,8 +31,16 @@ jobs:
       - name: Install native dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
+          apt-get install -y --no-install-recommends build-essential clang cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
           git config --global --add safe.directory "$PWD"
+      - name: Restore compiler objects (never test results or applications)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          restore-keys: |
+            s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
@@ -36,7 +49,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          bash Tools/build-switch2kit-linux.sh 2>&1 | tee linux-build.log
+          S2K_BUILD_JOBS="$(nproc)" bash Tools/build-switch2kit-linux.sh \
+            -DCMAKE_C_COMPILER=/usr/bin/clang-18 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-18 \
+            "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
+            2>&1 | tee linux-build.log
+      - name: Compiler cache statistics
+        if: always()
+        run: sccache --show-stats
       - name: Execute controller policies
         run: |
           python3 Tools/test_switch2kit_mapping.py --sanitize
@@ -90,7 +109,12 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 10 }}
     env:
       DEBIAN_FRONTEND: noninteractive
-      SCCACHE_GHA_ENABLED: 'true'
+      # One cache archive per job, not network requests for every object.
+      SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
+      SCCACHE_CACHE_SIZE: 2G
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: submodule.fetchJobs
+      GIT_CONFIG_VALUE_0: 8
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
@@ -116,6 +140,14 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Restore compiler objects (never test results or applications)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          restore-keys: |
+            s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
@@ -125,13 +157,16 @@ jobs:
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$PWD"
-          cmake -S . -B build-disabled -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          cmake -S . -B build-switch2kit -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=/usr/bin/clang-18 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-18 \
+            "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
+            -DCMAKE_INSTALL_PREFIX="$PWD/build-switch2kit/install" \
             -DENABLE_SWITCH2KIT=OFF -DENABLE_SDL=ON -DENABLE_QT=ON \
             -DUSE_SYSTEM_SDL3=OFF -DENABLE_TESTS=ON -DENABLE_VULKAN=OFF \
             -DENABLE_AUTOUPDATE=OFF 2>&1 | tee disabled-configure.log
-          cmake --build build-disabled --target dolphin-emu --parallel 3 2>&1 | tee disabled-build.log
-          cmake --build build-disabled --target unittests --parallel 3 2>&1 | tee upstream-unittests.log
-          ldd build-disabled/Binaries/dolphin-emu | tee disabled-dependencies.log
+          cmake --build build-switch2kit --target dolphin-emu --parallel "$(nproc)" 2>&1 | tee disabled-build.log
+          cmake --build build-switch2kit --target unittests --parallel "$(nproc)" 2>&1 | tee upstream-unittests.log
+          ldd build-switch2kit/Binaries/dolphin-emu | tee disabled-dependencies.log
           ! grep -q 'not found' disabled-dependencies.log
           ! grep -Ei 'Switch2Kit|libswift|libFoundation|libdispatch|libBlocksRuntime' disabled-dependencies.log
           # Qt initializes for --version too. Keep this disabled-backend smoke
@@ -139,7 +174,10 @@ jobs:
           profile=$(mktemp -d)
           trap 'rm -rf "$profile"' EXIT
           HOME="$profile" XDG_CONFIG_HOME="$profile/config" XDG_CACHE_HOME="$profile/cache" \
-            QT_QPA_PLATFORM=offscreen build-disabled/Binaries/dolphin-emu --user "$profile/user" --version
+            QT_QPA_PLATFORM=offscreen build-switch2kit/Binaries/dolphin-emu --user "$profile/user" --version
+      - name: Compiler cache statistics
+        if: always()
+        run: sccache --show-stats
       - name: Backend-disabled build diagnostics
         if: failure() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

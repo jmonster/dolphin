@@ -14,7 +14,12 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 10 }}
     env:
       VCPKG_MAX_CONCURRENCY: 3
-      SCCACHE_GHA_ENABLED: 'true'
+      # One cache archive per job, not network requests for every object.
+      SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
+      SCCACHE_CACHE_SIZE: 2G
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: submodule.fetchJobs
+      GIT_CONFIG_VALUE_0: 8
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
@@ -22,6 +27,14 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Restore compiler objects (never test results or applications)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: s2k-objects-v2-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          restore-keys: |
+            s2k-objects-v2-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v2-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
@@ -35,14 +48,8 @@ jobs:
       - name: Build the complete controller-enabled application
         shell: pwsh
         run: |
-          # Match the Release CRT/defines without spending CI time optimizing
-          # the emulator. The SDK build and all native launch checks stay real.
-          # Explicit artifact builds keep the upstream optimized Release flags.
-          $cmakeArgs = @()
-          if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') {
-            $cmakeArgs = @('-DCMAKE_C_FLAGS_RELEASE=/MD /Od /Ob0 /DNDEBUG',
-                           '-DCMAKE_CXX_FLAGS_RELEASE=/MD /Od /Ob0 /DNDEBUG')
-          }
+          # Load after upstream's MSVC flag initialization, not as shadowed -D flags.
+          $cmakeArgs = @("-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake")
           & ./Tools/build-switch2kit-windows.ps1 -CMakeArgs $cmakeArgs 2>&1 | Tee-Object windows-build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compiler cache statistics

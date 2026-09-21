@@ -5,6 +5,7 @@
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -86,6 +87,91 @@ class ChangeSelectionTests(unittest.TestCase):
             self.assertIn('Source/Core/file with space.cpp', paths)
             self.assertIn('Docs/moved.cpp', paths)
             self.assertEqual(select_checks(paths), NATIVE)
+
+class NativeBuildSetupTests(unittest.TestCase):
+    root = Path(__file__).resolve().parents[1]
+
+    def configure(self, root, event='pull_request', **extra_env):
+        env = dict(os.environ, GITHUB_ACTIONS='true', GITHUB_EVENT_NAME=event, **extra_env)
+        # Fixtures exercise CMake, not the surrounding native job's cache server.
+        for name in ('CMAKE_C_COMPILER_LAUNCHER', 'CMAKE_CXX_COMPILER_LAUNCHER'):
+            env.pop(name, None)
+        result = subprocess.run(['cmake', '-S', str(root), '-B', str(root / 'build'),
+                                 '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
+                                 f'-DCMAKE_PROJECT_dolphin-emu_INCLUDE={self.root}/Tools/ci-native.cmake'],
+                                env=env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_release_flags_after_upstream_msvc_override(self):
+        # This is a CMake scope regression, not a simulated Windows compiler.
+        # Load the real upstream flag file and then use the actual project hook.
+        for event, expected in [('pull_request', '/Od /Ob0 /DNDEBUG /Z7'),
+                                ('workflow_dispatch', '/O2 /DNDEBUG /Z7')]:
+            with self.subTest(event=event), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'CMakeLists.txt').write_text(f'''
+cmake_minimum_required(VERSION 3.25)
+set(MSVC TRUE)
+set(CMAKE_CXX_COMPILER_ID MSVC)
+set(CMAKE_CXX_FLAGS_RELEASE "/Od /DNDEBUG" CACHE STRING "")
+include("{self.root}/CMake/FlagsOverride.cmake")
+project(dolphin-emu LANGUAGES NONE)
+file(WRITE "${{CMAKE_BINARY_DIR}}/flags.txt" "${{CMAKE_CXX_FLAGS_RELEASE}}")
+''')
+                self.configure(root, event)
+                self.assertEqual((root / 'build/flags.txt').read_text(), expected)
+
+    def test_pch_keeps_per_target_flags_and_linux_optimization(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'Source/PCH').mkdir(parents=True)
+            (root / 'Source/PCH/pch.h').write_text('''
+#include <vector>
+#include <string>
+#ifndef FIXTURE_VALUE
+#error Per-target definitions must reach the PCH.
+#endif
+#ifndef NDEBUG
+#error Release definitions must be retained.
+#endif
+''')
+            (root / 'QtWidgets').write_text('#pragma once\n')
+            (root / 'value.cpp').write_text('int value() { return FIXTURE_VALUE; }\n')
+            (root / 'plain.c').write_text('int c_value(void) { return 1; }\n')
+            (root / 'main.cpp').write_text('''
+#include <vector>
+extern int value();
+int main() { std::vector<int> values{value()}; return values[0] == 7 ? 0 : 1; }
+''')
+            (root / 'CMakeLists.txt').write_text('''
+cmake_minimum_required(VERSION 3.25)
+project(dolphin-emu LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(ENABLE_QT ON)
+add_library(common value.cpp plain.c)
+target_compile_definitions(common PRIVATE FIXTURE_VALUE=7)
+add_executable(dolphin-emu main.cpp)
+target_compile_definitions(dolphin-emu PRIVATE FIXTURE_VALUE=9)
+target_include_directories(dolphin-emu PRIVATE "${CMAKE_SOURCE_DIR}")
+target_link_libraries(dolphin-emu PRIVATE common)
+''')
+            self.configure(root)
+            result = subprocess.run(['cmake', '--build', str(root / 'build'), '--parallel', '2'],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            subprocess.run([str(root / 'build/dolphin-emu')], check=True, timeout=2)
+            commands = json.loads((root / 'build/compile_commands.json').read_text())
+            plain = next(entry['command'] for entry in commands if entry['file'].endswith('plain.c'))
+            self.assertNotIn('cmake_pch.hxx', plain)
+            cpp = next(entry['command'] for entry in commands if entry['file'].endswith('value.cpp'))
+            self.assertIn('cmake_pch.hxx', cpp)
+            self.assertIn('-O0' if sys.platform == 'darwin' else '-O3', cpp)
+            self.assertIn('-DNDEBUG', cpp)
+
+    def test_ci_build_acceleration_changes_select_all_native_platforms(self):
+        self.assertEqual(select_checks(['Tools/ci-native.cmake']), NATIVE)
 
 
 if __name__ == '__main__':

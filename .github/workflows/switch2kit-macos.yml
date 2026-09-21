@@ -24,7 +24,12 @@ jobs:
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALL_CLEANUP: 1
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
-      SCCACHE_GHA_ENABLED: 'true'
+      # One cache archive per job, not network requests for every object.
+      SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
+      SCCACHE_CACHE_SIZE: 2G
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: submodule.fetchJobs
+      GIT_CONFIG_VALUE_0: 8
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
@@ -32,6 +37,14 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
+      - name: Restore compiler objects (never test results or applications)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: s2k-objects-v2-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          restore-keys: |
+            s2k-objects-v2-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v2-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
@@ -40,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          for formula in cmake ninja nasm automake libtool qt@6; do
+          for formula in cmake ninja nasm automake libtool qtbase qtsvg; do
             brew list --versions "$formula" >/dev/null 2>&1 || missing+=("$formula")
           done
           if [ "${#missing[@]}" -ne 0 ]; then
@@ -58,22 +71,14 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          # CI validates a complete native application, not emulator throughput.
-          # Keep Release defines/ABI and every launch check; avoid optimizing
-          # thousands of unrelated C/C++ files. Explicit artifact builds retain
-          # upstream's ordinary optimized Release flags.
-          flags=()
-          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then
-            flags=("-DCMAKE_C_FLAGS_RELEASE=-O0 -DNDEBUG"
-                   "-DCMAKE_CXX_FLAGS_RELEASE=-O0 -DNDEBUG")
-          fi
           test "$(uname -m)" = "$ARCH"
           cmake -S . -B build-switch2kit -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release "${flags[@]}" -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
             -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
             -DENABLE_SWITCH2KIT=ON -DENABLE_QT=ON -DENABLE_SDL=ON \
             -DUSE_SYSTEM_SDL3=OFF \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qtbase);$(brew --prefix qtsvg)" \
             -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON \
             2>&1 | tee switch2kit-configure.log
           cmake --build build-switch2kit --target dolphin-emu --parallel "$(sysctl -n hw.logicalcpu)" \

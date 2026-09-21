@@ -60,8 +60,8 @@ budget is not merge-ready. Verify actual job durations on the exact PR head.
 Native macOS/Windows smoke builds keep Release defines/runtime ABI but compile
 C/C++ without expensive optimization. They still compile/link the complete real
 application and execute every architecture/dependency/relocation/archive check.
-Linux's optimized builds/upstream unit suite, real Swift SDK tests and sanitizer
-regressions remain unchanged. These smoke builds do not establish optimized
+Linux keeps optimized builds and the complete upstream unit suite; real Swift
+SDK tests and sanitizer regressions remain unchanged. These smoke builds do not establish optimized
 macOS/Windows code-generation or gameplay performance correctness. The existing
 explicit artifact build uses normal optimized Release flags; local developer
 build defaults are unchanged. Do not describe unoptimized smoke builds as release
@@ -71,6 +71,18 @@ Cache the pinned Windows installer, do not upgrade already installed Homebrew
 build dependencies, and use the CPUs already assigned to each standard runner.
 Compiler-cache statistics must be visible; measure rather than assume a hit.
 Cold-cache failures must be fixed, not hidden by reporting only a warm rerun.
+
+Keep build acceleration CI-local through `Tools/ci-native.cmake`; do not rewrite
+upstream compiler defaults. Verify effective MSVC flags after upstream's
+`FlagsOverride.cmake`, not only the command-line arguments. Reuse upstream's PCH
+header on POSIX and its existing PCH implementation on Windows. Retain every
+translation unit; do not use unity builds to mask missing includes or collisions.
+Install the Qt components Dolphin actually requires, not the all-modules Qt
+metapackage. Parallelize pinned submodule fetching. Keep compiler objects in a
+bounded local cache restored once per job, rather than paying a remote-cache
+round trip per translation unit. Cache only compiler outputs, never successful
+test results or a prebuilt application. Both Linux configurations must continue
+to configure/build/link separately, with the disabled one in a Swift-free image.
 
 ## Claims and review
 
