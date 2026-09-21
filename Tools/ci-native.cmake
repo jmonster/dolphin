@@ -10,13 +10,8 @@ if(NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
   if(MSVC)
     set(CMAKE_C_FLAGS_RELEASE "/Od /Ob0 /DNDEBUG /Z7")
     set(CMAKE_CXX_FLAGS_RELEASE "/Od /Ob0 /DNDEBUG /Z7")
-    # Child project() calls can load the upstream override again. Directory
-    # options follow configuration flags, so the actual child compiler commands
-    # must also end in /Od /Ob0. Keep CRT selection, defines and warnings intact.
-    add_compile_options(
-      "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Od>"
-      "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Ob0>"
-    )
+    # Child project() calls and target options can override configuration flags.
+    # Apply the final Release options to completed targets below, not here.
   elseif(APPLE)
     set(CMAKE_C_FLAGS_RELEASE "-O0 -DNDEBUG")
     set(CMAKE_CXX_FLAGS_RELEASE "-O0 -DNDEBUG")
@@ -73,6 +68,18 @@ endforeach()
 # Per-target PCHs preserve each target's own defines, include paths and flags.
 # Do not use unity builds (which change translation-unit boundaries), touch the
 # production sources, replace libraries, or exclude a source from compilation.
+# Upstream splits its unit suite into object libraries. Accelerate their C++
+# parsing too, rather than only the two sources in the final tests executable.
+function(switch2kit_ci_test_targets directory output)
+  get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+  get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+  foreach(child IN LISTS children)
+    switch2kit_ci_test_targets("${child}" child_targets)
+    list(APPEND targets ${child_targets})
+  endforeach()
+  set(${output} "${targets}" PARENT_SCOPE)
+endfunction()
+
 function(switch2kit_ci_precompile_headers)
   # The pinned shader compiler supplies its own PCH for these exact sources.
   # Its parser headers dominated cold compilation; compile that same upstream
@@ -84,10 +91,25 @@ function(switch2kit_ci_precompile_headers)
   if(MSVC)
     return()
   endif()
-  foreach(target common audiocommon inputcommon videocommon discio core uicommon
-                 videoogl videonull videosoftware videometal videovulkan
-                 dolphin-tool dolphin-emu)
+  set(pch_targets common audiocommon inputcommon videocommon discio core uicommon
+                  videoogl videonull videosoftware videometal videovulkan
+                  dolphin-tool dolphin-emu)
+  if(TARGET tests)
+    get_target_property(test_dir tests SOURCE_DIR)
+    switch2kit_ci_test_targets("${test_dir}" test_targets)
+    list(APPEND pch_targets ${test_targets})
+  endif()
+  foreach(target IN LISTS pch_targets)
     if(TARGET ${target})
+      get_target_property(kind ${target} TYPE)
+      if(NOT kind MATCHES "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
+        continue()
+      endif()
+      get_target_property(existing_pch ${target} PRECOMPILE_HEADERS)
+      get_target_property(reuse_pch ${target} PRECOMPILE_HEADERS_REUSE_FROM)
+      if(existing_pch OR reuse_pch)
+        continue()
+      endif()
       # Upstream gives some files different flags (e.g. ARM crypto ISA flags).
       # They still compile normally; a target-wide PCH cannot represent those
       # per-source options. Resolve properties in the target's source directory.
@@ -146,8 +168,23 @@ function(switch2kit_ci_cache_targets directory)
           C_COMPILER_LAUNCHER "${_switch2kit_c_launcher}"
           CXX_COMPILER_LAUNCHER "${_switch2kit_cxx_launcher}")
       endif()
-      # Preserve upstream dependency/PCH ordering rather than retaining an
-      # unproven eager-scheduling optimization on the standard runners.
+      if(NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
+        # Let CMake remove only unnecessary compile-order edges between static
+        # and object libraries. It retains explicit add_dependencies(), generated
+        # source prerequisites, custom-command side effects and final link inputs.
+        # Never clear MANUALLY_ADDED_DEPENDENCIES or edit Ninja's generated graph.
+        if(kind MATCHES "^(STATIC_LIBRARY|OBJECT_LIBRARY)$")
+          set_property(TARGET ${target} PROPERTY OPTIMIZE_DEPENDENCIES ON)
+        endif()
+        if(MSVC)
+          # SHELL keeps this final pair together even when an inherited /Od or
+          # /Ob0 appeared earlier: CMake otherwise de-duplicates the last copy.
+          # Apply to the PCH producer and consumers alike; keep Debug, CRT,
+          # warning, architecture, debug-information and sanitizer flags intact.
+          target_compile_options(${target} PRIVATE
+            "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:SHELL:/Od /Ob0>")
+        endif()
+      endif()
       if(NOT MSVC AND NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
         # Upstream appends -ggdb even in Release. Keep line-level backtraces,
         # without emitting full type debug information for every smoke object.
