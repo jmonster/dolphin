@@ -23,3 +23,9 @@ endmacro()
 add_subdirectory(Common)
 add_subdirectory(Core)
 add_subdirectory(VideoCommon)
+
+# Run these source-level regressions even with the backend disabled. The
+# harnesses require a POSIX compiler driver; native Windows is checked separately.
+if(NOT WIN32)
+  add_subdirectory(Switch2Kit)
+endif()

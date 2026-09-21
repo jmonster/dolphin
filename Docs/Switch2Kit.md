@@ -76,8 +76,10 @@ An automated callback test is not a physical rumble test.
 
 ## Applications and prerequisites
 
-For development artifacts, open this repository's **Actions** tab and choose a successful
-run for the revision being tested. The workflows and application artifacts are:
+For development artifacts, open **Actions > Native Switch2Kit > Run workflow**, choose
+the revision and the `macos`, `linux` or `windows` target, then use the successful run's
+artifacts. PRs automatically qualify affected platforms but upload application archives
+only when explicitly requested. The workflows and application artifacts are:
 
 | Platform | Workflow | Artifact |
 | --- | --- | --- |
@@ -198,7 +200,9 @@ controller absent after a search, check adapter power/access, Sync mode, competi
 connections and the displayed status, then retry Find. Installing a dashboard or replacing
 system SDL is not a remedy.
 
-The workflows check builds and extracted-package launch using private test settings.
+See [testing and CI](Switch2KitCI.md) for the upstream unit-test baseline, focused CTest
+commands, automatic change selection and compiler caching. Selected native workflows
+check full builds and extracted-package launch using private test settings.
 They do not establish pristine first-use dialogs, downloaded-app approval, Bluetooth
 hardware or gameplay. Mapping and host regressions cover cancellation, backup/rollback,
 identity, saved consent, explicit stop and shutdown ordering; keep those checks when

@@ -1,6 +1,7 @@
+# Called automatically for affected inputs; never a duplicate PR trigger.
 name: Switch2Kit Linux application
 on:
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,24 +12,61 @@ jobs:
   linux:
     runs-on: ubuntu-24.04
     container: swift:6.2.1-noble
-    timeout-minutes: 90
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 10 }}
     env:
       DEBIAN_FRONTEND: noninteractive
+      # One cache archive per job, not network requests for every object.
+      SCCACHE_DIR: /github/home/.cache/sccache
+      SCCACHE_CACHE_SIZE: 2G
+      NINJA_STATUS: '[%f/%t %r running, %e sec] '
+      # Configure probes and standalone sanitizer/SDK tests must compile directly.
+      S2K_CI_COMPILER_CACHE: sccache
+      S2K_CI_LINUX_LINKER: /usr/bin/ld.lld-19
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
       - name: Install native dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
+          apt-get install -y --no-install-recommends build-essential clang clang-19 lld-19 cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
           git config --global --add safe.directory "$PWD"
+      - name: Fetch and verify native gitlinks in parallel
+        run: python3 Tools/checkout_native.py
+      - name: Verify upstream C++23 library support before compiling Dolphin
+        run: |
+          # Clang 18 cannot use libstdc++'s std::expected. Do not spoof feature macros.
+          printf '%s\n' '#include <expected>' \
+            'static_assert(std::expected<int, int>(42).value() == 42);' | \
+            /usr/bin/clang++-19 -std=c++23 -x c++ -fsyntax-only -
+      - name: Restore compiler objects (never test results or applications)
+        id: compiler-objects
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+      - name: Cache native compiler results (tests still run)
+        id: compiler-cache
+        uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
+        with:
+          version: v0.10.0
       - name: Build and install the controller-enabled application
         shell: bash
         run: |
           set -o pipefail
-          bash Tools/build-switch2kit-linux.sh 2>&1 | tee linux-build.log
+          jobs="$(nproc)"
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then jobs=$((jobs + 2)); fi
+          S2K_BUILD_JOBS="$jobs" bash Tools/build-switch2kit-linux.sh \
+            -DCMAKE_C_COMPILER=/usr/bin/clang-19 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-19 \
+            "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
+            2>&1 | tee linux-build.log
+      - name: Compiler cache statistics
+        if: always()
+        run: sccache --show-stats
       - name: Execute controller policies
         run: |
           python3 Tools/test_switch2kit_mapping.py --sanitize
@@ -53,6 +91,7 @@ jobs:
             --forbidden-root "$PWD" --forbidden-root "$RUNNER_TEMP/disabled-build-tree" \
             --forbidden-root "$RUNNER_TEMP/unavailable-staged-application"
       - name: Controller-enabled development build
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-linux-x86_64
@@ -60,7 +99,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Native diagnostics
-        if: always()
+        if: failure() || cancelled() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-linux-diagnostics
@@ -68,39 +107,101 @@ jobs:
             linux-*.log
             linux-launch.json
           retention-days: 7
+      # Keep valid compiler objects even when a later build/test is cancelled.
+      # Never save build trees, applications, configuration answers or test results.
+      - name: Save compiler objects after native validation
+        if: always() && steps.compiler-cache.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.compiler-objects.outputs.cache-primary-key }}
 
   disabled:
+    needs: linux
     # A complete ordinary application build in an image without Swift. This is
     # not a controller-enabled artifact and does not use the SDK build helper.
     runs-on: ubuntu-24.04
-    container: ubuntu:24.04
-    timeout-minutes: 90
+    container:
+      image: ubuntu:24.04
+      # Upstream memory-mapping tests exceed Docker's default 64 MiB /dev/shm.
+      options: --shm-size=512m
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 10 }}
     env:
       DEBIAN_FRONTEND: noninteractive
+      # One cache archive per job, not network requests for every object.
+      SCCACHE_DIR: /github/home/.cache/sccache
+      SCCACHE_CACHE_SIZE: 2G
+      NINJA_STATUS: '[%f/%t %r running, %e sec] '
+      # Configure probes and standalone sanitizer/SDK tests must compile directly.
+      S2K_CI_COMPILER_CACHE: sccache
+      S2K_CI_LINUX_LINKER: /usr/bin/ld.lld-19
     steps:
+      - name: Check shared memory before installing dependencies or compiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /dev/shm
+          available=$(df -B1 --output=avail /dev/shm | tail -n 1)
+          if ! [ "$available" -ge "$((128 * 1024 * 1024))" ]; then
+            echo '::error::Upstream memory tests need at least 128 MiB free in /dev/shm. Keep --shm-size=512m on this container.' >&2
+            exit 1
+          fi
       - name: Install ordinary native dependencies without Swift
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus
+          apt-get install -y --no-install-recommends git ca-certificates build-essential clang clang-19 lld-19 cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus
           if command -v swift || command -v swiftc; then
             echo 'The backend-disabled qualification image must not contain Swift.' >&2
             exit 1
           fi
+      - name: Verify upstream C++23 library support before compiling Dolphin
+        run: |
+          # Use the same real compiler/library pair as the enabled build.
+          printf '%s\n' '#include <expected>' \
+            'static_assert(std::expected<int, int>(42).value() == 42);' | \
+            /usr/bin/clang++-19 -std=c++23 -x c++ -fsyntax-only -
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
+      - name: Fetch and verify native gitlinks in parallel
+        run: |
+          git config --global --add safe.directory "$PWD"
+          python3 Tools/checkout_native.py
+      - name: Restore compiler objects (never test results or applications)
+        id: compiler-objects
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v4-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+      - name: Cache native compiler results (tests still run)
+        id: compiler-cache
+        uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
+        with:
+          version: v0.10.0
       - name: Build the complete application with Switch2Kit disabled
         shell: bash
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$PWD"
-          cmake -S . -B build-disabled -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          cmake -S . -B build-switch2kit -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=/usr/bin/clang-19 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-19 \
+            "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
+            -DCMAKE_INSTALL_PREFIX="$PWD/build-switch2kit/install" \
             -DENABLE_SWITCH2KIT=OFF -DENABLE_SDL=ON -DENABLE_QT=ON \
-            -DUSE_SYSTEM_SDL3=OFF -DENABLE_TESTS=OFF -DENABLE_VULKAN=OFF \
+            -DUSE_SYSTEM_SDL3=OFF -DENABLE_TESTS=ON -DENABLE_VULKAN=OFF \
             -DENABLE_AUTOUPDATE=OFF 2>&1 | tee disabled-configure.log
-          cmake --build build-disabled --target dolphin-emu --parallel 3 2>&1 | tee disabled-build.log
-          ldd build-disabled/Binaries/dolphin-emu | tee disabled-dependencies.log
+          # Submit the expensive emitter case and moc first, in the same full
+          # application/test graph. They must not become a serial compile tail.
+          jobs="$(nproc)"
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then jobs=$((jobs + 2)); fi
+          cmake --build build-switch2kit --target x64EmitterTest dolphin-emu_autogen tests dolphin-emu --parallel "$jobs" 2>&1 | tee disabled-build.log
+          # Building tests does not execute them; retain the complete CTest target.
+          cmake --build build-switch2kit --target unittests --parallel "$(nproc)" 2>&1 | tee upstream-unittests.log
+          ldd build-switch2kit/Binaries/dolphin-emu | tee disabled-dependencies.log
           ! grep -q 'not found' disabled-dependencies.log
           ! grep -Ei 'Switch2Kit|libswift|libFoundation|libdispatch|libBlocksRuntime' disabled-dependencies.log
           # Qt initializes for --version too. Keep this disabled-backend smoke
@@ -108,11 +209,24 @@ jobs:
           profile=$(mktemp -d)
           trap 'rm -rf "$profile"' EXIT
           HOME="$profile" XDG_CONFIG_HOME="$profile/config" XDG_CACHE_HOME="$profile/cache" \
-            QT_QPA_PLATFORM=offscreen build-disabled/Binaries/dolphin-emu --user "$profile/user" --version
-      - name: Backend-disabled build diagnostics
+            QT_QPA_PLATFORM=offscreen build-switch2kit/Binaries/dolphin-emu --user "$profile/user" --version
+      - name: Compiler cache statistics
         if: always()
+        run: sccache --show-stats
+      - name: Backend-disabled build diagnostics
+        if: failure() || cancelled() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-without-Switch2Kit-linux-diagnostics
-          path: disabled-*.log
+          path: |
+            disabled-*.log
+            upstream-unittests.log
           retention-days: 7
+      # Keep valid compiler objects even when a later build/test is cancelled.
+      # Never save build trees, applications, configuration answers or test results.
+      - name: Save compiler objects after native validation
+        if: always() && steps.compiler-cache.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.compiler-objects.outputs.cache-primary-key }}

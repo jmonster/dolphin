@@ -1,6 +1,7 @@
+# Called automatically for affected inputs; never a duplicate PR trigger.
 name: Switch2Kit Windows application
 on:
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,24 +11,53 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-2025-vs2026
-    timeout-minutes: 120
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 10 }}
     env:
       VCPKG_MAX_CONCURRENCY: 3
+      # One cache archive per job, not network requests for every object.
+      SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
+      SCCACHE_CACHE_SIZE: 2G
+      NINJA_STATUS: '[%f/%t %r running, %e sec] '
+      # Configure probes and standalone sanitizer/SDK tests must compile directly.
+      S2K_CI_COMPILER_CACHE: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
+      - name: Fetch and verify native gitlinks in parallel
+        run: python Tools/checkout_native.py
+      - name: Restore compiler objects (never test results or applications)
+        id: compiler-objects
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: s2k-objects-v4-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            s2k-objects-v4-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v4-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+      - name: Cache native compiler results (tests still run)
+        id: compiler-cache
+        uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
+        with:
+          version: v0.10.0
       - uses: compnerd/gha-setup-swift@397094e75494a93fa8d81db0268dbc8f5d6cf7c6
         with:
           # Swift 6.2 ships Clang 19, which the VS 2026 STL rejects.
           swift-version: swift-6.3.3-release
           swift-build: 6.3.3-RELEASE
+          cache: true
       - name: Build the complete controller-enabled application
         shell: pwsh
         run: |
-          & ./Tools/build-switch2kit-windows.ps1 2>&1 | Tee-Object windows-build.log
+          # Load after upstream's MSVC flag initialization, not as shadowed -D flags.
+          $cmakeArgs = @("-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake")
+          & ./Tools/build-switch2kit-windows.ps1 -CMakeArgs $cmakeArgs 2>&1 | Tee-Object windows-build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compiler cache statistics
+        if: always()
+        shell: pwsh
+        run: sccache --show-stats
       - name: Stage and launch the application away from the build tree
         shell: pwsh
         run: |
@@ -49,6 +79,7 @@ jobs:
           & ./Tools/test_switch2kit_windows_launch.ps1 -Archive 'Dolphin-Switch2Kit-windows-x86_64.zip' -ForbiddenRoot "$PWD"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Controller-enabled development application
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-windows-x86_64
@@ -56,7 +87,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Native diagnostics
-        if: always()
+        if: failure() || cancelled() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-windows-diagnostics
@@ -64,3 +95,11 @@ jobs:
             windows-*.log
             windows-launch.json
           retention-days: 7
+      # Keep valid compiler objects even when a later build/test is cancelled.
+      # Never save build trees, applications, configuration answers or test results.
+      - name: Save compiler objects after native validation
+        if: always() && steps.compiler-cache.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.compiler-objects.outputs.cache-primary-key }}
