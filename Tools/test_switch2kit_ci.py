@@ -95,7 +95,8 @@ class NativeBuildSetupTests(unittest.TestCase):
     def configure(self, root, event='pull_request', **extra_env):
         env = dict(os.environ, GITHUB_ACTIONS='true', GITHUB_EVENT_NAME=event, **extra_env)
         # Fixtures exercise CMake, not the surrounding native job's cache server.
-        for name in ('CMAKE_C_COMPILER_LAUNCHER', 'CMAKE_CXX_COMPILER_LAUNCHER'):
+        for name in ('CMAKE_C_COMPILER_LAUNCHER', 'CMAKE_CXX_COMPILER_LAUNCHER',
+                     'S2K_CI_COMPILER_CACHE'):
             env.pop(name, None)
         result = subprocess.run(['cmake', '-S', str(root), '-B', str(root / 'build'),
                                  '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
@@ -177,7 +178,7 @@ target_link_libraries(dolphin-emu PRIVATE common)
             self.assertIn('-std=c++20', special)
             cpp = next(entry['command'] for entry in commands if entry['file'].endswith('value.cpp'))
             self.assertIn('cmake_pch.hxx', cpp)
-            self.assertIn('-O0' if sys.platform == 'darwin' else '-O3', cpp)
+            self.assertIn('-O0' if sys.platform == 'darwin' else '-O1', cpp)
             self.assertIn('-DNDEBUG', cpp)
 
     def test_ci_build_acceleration_changes_select_all_native_platforms(self):
