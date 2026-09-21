@@ -53,17 +53,26 @@ class NativeExecutionTests(unittest.TestCase):
             cc = os.environ.get('CC') or shutil.which('cc')
             cxx = os.environ.get('CXX') or shutil.which('c++')
             self.assertTrue(cc and cxx, 'A real C and C++ compiler is required')
-            write(root, 'Source/PCH/pch.h', '#pragma once\n#include <vector>\n')
+            write(root, 'Source/PCH/pch.h', '#pragma once\n#include <vector>\n'
+                  '#ifdef CASE_VALUE\nconstexpr int value_from_pch = CASE_VALUE;\n#endif\n')
             write(root, 'common.cpp', 'int common_value() { return 10; }\n')
             write(root, 'Source/UnitTests/CMakeLists.txt', '''\
                 add_library(upstream_cases OBJECT case.cpp)
+                add_library(matching_cases OBJECT matching.cpp)
+                add_library(different_cases OBJECT different.cpp)
+                target_compile_definitions(upstream_cases PRIVATE CASE_VALUE=10)
+                target_compile_definitions(matching_cases PRIVATE CASE_VALUE=10)
+                target_compile_definitions(different_cases PRIVATE CASE_VALUE=22)
                 add_executable(tests EXCLUDE_FROM_ALL main.cpp)
-                target_link_libraries(tests PRIVATE upstream_cases)
+                target_link_libraries(tests PRIVATE upstream_cases matching_cases different_cases)
                 add_custom_target(unittests DEPENDS tests)
             ''')
-            write(root, 'Source/UnitTests/case.cpp', 'int tested_value() { return 42; }\n')
+            write(root, 'Source/UnitTests/case.cpp', 'int tested_value() { return value_from_pch; }\n')
+            write(root, 'Source/UnitTests/matching.cpp', 'int matching_value() { return value_from_pch; }\n')
+            write(root, 'Source/UnitTests/different.cpp', 'int different_value() { return value_from_pch; }\n')
             write(root, 'Source/UnitTests/main.cpp',
-                  'int tested_value(); int main() { return tested_value() == 42 ? 0 : 1; }\n')
+                  'int tested_value(); int matching_value(); int different_value(); '
+                  'int main() { return tested_value() + matching_value() + different_value() == 42 ? 0 : 1; }\n')
             write(root, 'special.cpp', '''\
                 #ifndef PER_SOURCE
                 #error per-source options lost
@@ -175,6 +184,11 @@ class NativeExecutionTests(unittest.TestCase):
                     self.assertIn('cmake_pch', common_command)
                     case_command = next(c['command'] for c in commands if c['file'].endswith('case.cpp'))
                     self.assertIn('cmake_pch', case_command)
+                    matching = next(c['command'] for c in commands if c['file'].endswith('matching.cpp'))
+                    different = next(c['command'] for c in commands if c['file'].endswith('different.cpp'))
+                    self.assertIn('upstream_cases.dir/cmake_pch', matching)
+                    self.assertIn('different_cases.dir/cmake_pch', different)
+                    self.assertNotIn('upstream_cases.dir/cmake_pch', different)
                     order = run('ninja', '-C', build, '-t', 'query',
                                 'cmake_object_order_depends_target_common', cwd=root, env=env).stdout
                     if event == 'pull_request':

@@ -10,8 +10,12 @@ if(NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
   if(MSVC)
     set(CMAKE_C_FLAGS_RELEASE "/Od /Ob0 /DNDEBUG /Z7")
     set(CMAKE_CXX_FLAGS_RELEASE "/Od /Ob0 /DNDEBUG /Z7")
-    # Child project() calls and target options can override configuration flags.
-    # Apply the final Release options to completed targets below, not here.
+    # Preserve the setup hook's child-directory options. The deferred target
+    # pass below is authoritative when later target options would override them.
+    add_compile_options(
+      "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Od>"
+      "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Ob0>"
+    )
   elseif(APPLE)
     set(CMAKE_C_FLAGS_RELEASE "-O0 -DNDEBUG")
     set(CMAKE_CXX_FLAGS_RELEASE "-O0 -DNDEBUG")
@@ -130,8 +134,44 @@ function(switch2kit_ci_precompile_headers)
           endif()
         endforeach()
       endforeach()
-      target_precompile_headers(${target} PRIVATE
-        "$<$<COMPILE_LANGUAGE:CXX>:${PROJECT_SOURCE_DIR}/Source/PCH/pch.h>")
+      # Most upstream cases are one-source object libraries. Share a PCH only
+      # across cases with the same target properties, directory flags and exact
+      # dependency usage requirements. Reusing the tests executable would create
+      # a dependency cycle: it links these cases. Use the first matching case.
+      set(pch_key "")
+      if(kind STREQUAL "OBJECT_LIBRARY" AND target IN_LIST test_targets)
+        set(signature "")
+        foreach(property COMPILE_OPTIONS COMPILE_DEFINITIONS INCLUDE_DIRECTORIES
+                         LINK_LIBRARIES CXX_STANDARD CXX_STANDARD_REQUIRED CXX_EXTENSIONS
+                         POSITION_INDEPENDENT_CODE CXX_VISIBILITY_PRESET
+                         VISIBILITY_INLINES_HIDDEN COMPILE_FLAGS AUTOMOC AUTOUIC)
+          get_target_property(value ${target} ${property})
+          string(APPEND signature "|${property}=${value}")
+        endforeach()
+        foreach(variable CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
+                         CMAKE_CXX_FLAGS_RELWITHDEBINFO CMAKE_CXX_FLAGS_MINSIZEREL
+                         CMAKE_INCLUDE_CURRENT_DIR CMAKE_CXX_SCAN_FOR_MODULES)
+          get_directory_property(value DIRECTORY "${source_dir}" DEFINITION ${variable})
+          string(APPEND signature "|${variable}=${value}")
+          if(variable STREQUAL "CMAKE_INCLUDE_CURRENT_DIR" AND value)
+            string(APPEND signature "|source=${source_dir}")
+          endif()
+        endforeach()
+        # Target-context expressions may evaluate differently despite matching
+        # strings. Such targets retain their own PCH instead of assuming equality.
+        if(NOT signature MATCHES "TARGET_PROPERTY|TARGET_NAME|TARGET_OBJECTS")
+          string(SHA256 pch_key "${signature}")
+        endif()
+      endif()
+      if(pch_key AND DEFINED pch_provider_${pch_key})
+        target_precompile_headers(${target} REUSE_FROM ${pch_provider_${pch_key}})
+      else()
+        target_precompile_headers(${target} PRIVATE
+          "$<$<COMPILE_LANGUAGE:CXX>:${PROJECT_SOURCE_DIR}/Source/PCH/pch.h>")
+        if(pch_key)
+          set(pch_provider_${pch_key} ${target})
+        endif()
+      endif()
     endif()
   endforeach()
   if(TARGET dolphin-emu AND ENABLE_QT)
