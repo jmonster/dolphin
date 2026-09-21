@@ -226,6 +226,13 @@ function(switch2kit_ci_cache_targets directory)
         endif()
       endif()
       if(NOT MSVC AND NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
+        if(APPLE)
+          # Objective-C languages are enabled after the project hook. Their
+          # Release flags otherwise retain -O3 even when C/C++ use -O0.
+          target_compile_options(${target} PRIVATE
+            "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>>:-O0>"
+            "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:OBJC,OBJCXX>>:-g1>")
+        endif()
         # Upstream appends -ggdb even in Release. Keep line-level backtraces,
         # without emitting full type debug information for every smoke object.
         # Append after upstream initialization; never change sanitizer options.

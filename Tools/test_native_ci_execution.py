@@ -221,6 +221,78 @@ class NativeExecutionTests(unittest.TestCase):
                     run(*configure, cwd=root, env=env)
                     self.assertFalse(calls.exists())
 
+    def test_late_objective_c_languages_preserve_profiles_and_sanitizers(self):
+        # Compile real Objective-C languages with host Clang; select the Apple
+        # policy without pretending this fixture validates macOS frameworks.
+        cc, cxx = shutil.which('clang'), shutil.which('clang++')
+        self.assertTrue(cc and cxx, 'Clang is required for Objective-C CI regressions')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write(root, 'part.m', 'int objc_value(void) { return 20; }\n')
+            write(root, 'part.mm', '''\
+                #include <array>
+                int objcxx_value() { std::array<int, 2> a{11, 11}; return a[0] + a[1]; }
+            ''')
+            write(root, 'main.cpp', '''\
+                extern "C" int objc_value(void);
+                int objcxx_value();
+                int main() { return objc_value() + objcxx_value() == 42 ? 0 : 1; }
+            ''')
+            write(root, 'CMakeLists.txt', '''\
+                cmake_minimum_required(VERSION 3.25)
+                project(dolphin-emu LANGUAGES C CXX)
+                set(APPLE TRUE)
+                enable_language(OBJC OBJCXX)
+                add_compile_options(-ggdb)
+                add_library(parts STATIC part.m part.mm)
+                add_executable(check main.cpp)
+                target_link_libraries(check PRIVATE parts)
+                enable_testing()
+                add_test(NAME language_execution COMMAND check)
+            ''')
+            for event, config in [('pull_request', 'Release'),
+                                  ('workflow_dispatch', 'Release'),
+                                  ('pull_request', 'Debug')]:
+                with self.subTest(event=event, config=config):
+                    env = dict(os.environ, GITHUB_ACTIONS='true', GITHUB_EVENT_NAME=event)
+                    for variable in ('S2K_CI_COMPILER_CACHE', 'CMAKE_C_COMPILER_LAUNCHER',
+                                     'CMAKE_CXX_COMPILER_LAUNCHER'):
+                        env.pop(variable, None)
+                    # Reconfigure the same tree to detect sticky CI-only flags
+                    # without repeating unchanged compiler ABI detection.
+                    build = root / 'build'
+                    flags = '-fsanitize=address,undefined -fno-omit-frame-pointer'
+                    configure = ['cmake', '-S', root, '-B', build, '-G', 'Ninja',
+                                 f'-DCMAKE_BUILD_TYPE={config}', '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+                                 f'-DCMAKE_PROJECT_dolphin-emu_INCLUDE={PRESET}',
+                                 f'-DCMAKE_C_COMPILER={cc}', f'-DCMAKE_CXX_COMPILER={cxx}',
+                                 f'-DCMAKE_OBJC_COMPILER={cc}', f'-DCMAKE_OBJCXX_COMPILER={cxx}']
+                    configure += [f'-DCMAKE_{language}_FLAGS={flags}'
+                                  for language in ('C', 'CXX', 'OBJC', 'OBJCXX')]
+                    run(*configure, cwd=root, env=env)
+                    commands = json.loads((build / 'compile_commands.json').read_text())
+                    self.assertEqual(len(commands), 3)
+                    for command in commands:
+                        options = command['command'].split()
+                        self.assertIn('-fsanitize=address,undefined', options)
+                        self.assertIn('-fno-omit-frame-pointer', options)
+                        if config == 'Release':
+                            optimization = [arg for arg in options
+                                            if arg in ['-O0', '-O1', '-O2', '-O3', '-Os', '-Oz']]
+                            self.assertEqual(optimization[-1],
+                                             '-O0' if event == 'pull_request' else '-O3')
+                            self.assertIn('-DNDEBUG', options)
+                        else:
+                            self.assertNotIn('-O0', options)
+                            self.assertNotIn('-DNDEBUG', options)
+                        if config == 'Release' and event == 'pull_request':
+                            self.assertLess(options.index('-ggdb'), options.index('-g1'))
+                        else:
+                            self.assertNotIn('-g1', options)
+                    run('cmake', '--build', build, '--parallel', '2', cwd=root, env=env)
+                    run('ctest', '--test-dir', build, '--output-on-failure', '--no-tests=error',
+                        cwd=root, env=env)
+
     def test_manual_msvc_pch_is_not_a_cmake_pch_property(self):
         # This exercises target wiring on POSIX. The real Windows job remains
         # responsible for compiling/linking the upstream /Yc and /Yu commands.
