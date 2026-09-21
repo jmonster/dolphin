@@ -59,6 +59,15 @@ jobs:
           if [ "${#missing[@]}" -ne 0 ]; then
             brew install "${missing[@]}"
           fi
+          # Split Qt formulae share Homebrew's linked installation prefix.
+          # A qtbase keg is not a complete Qt prefix: Svg lives in qtsvg.
+          qt_prefix="$(brew --prefix)"
+          for component in Qt6 Qt6Svg; do
+            test -f "$qt_prefix/lib/cmake/$component/${component}Config.cmake" || {
+              echo "::error::Missing linked Qt package: $component in $qt_prefix" >&2
+              exit 1
+            }
+          done
       - name: Check source pin and integration
         run: |
           test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = "$(git ls-tree HEAD Externals/Switch2Kit | awk '{print $3}')"
@@ -78,7 +87,8 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
             -DENABLE_SWITCH2KIT=ON -DENABLE_QT=ON -DENABLE_SDL=ON \
             -DUSE_SYSTEM_SDL3=OFF \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qtbase);$(brew --prefix qtsvg)" \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix)" \
+            -DQt6_DIR="$(brew --prefix)/lib/cmake/Qt6" \
             -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON \
             2>&1 | tee switch2kit-configure.log
           cmake --build build-switch2kit --target dolphin-emu --parallel "$(sysctl -n hw.logicalcpu)" \
