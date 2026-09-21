@@ -44,6 +44,10 @@ if(CMAKE_HOST_WIN32 AND MSVC AND NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflo
   # Test the same runtime configuration as the real application, not a separate
   # Debug link with an incremental PDB/manifest cycle for every tiny probe.
   set(CMAKE_TRY_COMPILE_CONFIGURATION Release)
+  # Upstream appends /DEBUG to every executable link, including feature probes.
+  # Tiny configure executables still compile and link, but need neither a PDB
+  # nor an application manifest. These check-only options never reach targets.
+  list(APPEND CMAKE_REQUIRED_LINK_OPTIONS /DEBUG:NONE /MANIFEST:NO)
   message(STATUS "Native CI Windows linker: ${CMAKE_LINKER_LLD}")
 endif()
 
@@ -92,7 +96,43 @@ function(switch2kit_ci_precompile_headers)
     get_target_property(glslang_source glslang SOURCE_DIR)
     target_precompile_headers(glslang PRIVATE "${glslang_source}/MachineIndependent/pch.h")
   endif()
+  if(TARGET dolphin-emu AND ENABLE_QT AND
+     NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
+    # moc reads the Qt target's sources; it need not wait for every linked
+    # library to finish compiling. Preserve explicit generated/staging targets
+    # and any existing autogen dependencies. CMake still owns source generation
+    # and the application's compile/link dependency graph.
+    get_target_property(qt_dependencies dolphin-emu MANUALLY_ADDED_DEPENDENCIES)
+    if(qt_dependencies)
+      set_property(TARGET dolphin-emu APPEND PROPERTY AUTOGEN_TARGET_DEPENDS
+        ${qt_dependencies})
+    endif()
+    # This upstream generated header is a core source, not a Qt source. Keep
+    # the file prerequisite without waiting for core's compiled static library.
+    if(TARGET core)
+      get_target_property(core_binary core BINARY_DIR)
+      get_target_property(core_sources core SOURCES)
+      if("AchievementApprovedHash.h" IN_LIST core_sources)
+        set_property(TARGET dolphin-emu APPEND PROPERTY AUTOGEN_TARGET_DEPENDS
+          "${core_binary}/AchievementApprovedHash.h")
+      endif()
+    endif()
+    set_property(TARGET dolphin-emu PROPERTY AUTOGEN_ORIGIN_DEPENDS OFF)
+  endif()
   if(MSVC)
+    # DolphinQt enables RTTI and does not use the core's shared /GR- PCH.
+    # Give it its own PCH, with its actual Qt flags, as on POSIX. Do not mix
+    # CMake's PCH with an existing manual or target-provided implementation.
+    if(TARGET dolphin-emu AND ENABLE_QT)
+      get_target_property(qt_links dolphin-emu LINK_LIBRARIES)
+      get_target_property(qt_pch dolphin-emu PRECOMPILE_HEADERS)
+      get_target_property(qt_reuse_pch dolphin-emu PRECOMPILE_HEADERS_REUSE_FROM)
+      if(NOT "use_pch" IN_LIST qt_links AND NOT qt_pch AND NOT qt_reuse_pch)
+        target_precompile_headers(dolphin-emu PRIVATE
+          "$<$<COMPILE_LANGUAGE:CXX>:${PROJECT_SOURCE_DIR}/Source/PCH/pch.h>"
+          "$<$<COMPILE_LANGUAGE:CXX>:<QtWidgets$<ANGLE-R>>")
+      endif()
+    endif()
     return()
   endif()
   set(pch_targets common audiocommon inputcommon videocommon discio core uicommon

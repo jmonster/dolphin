@@ -299,6 +299,7 @@ class NativeExecutionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             write(root, 'part.cpp', 'int part;\n')
+            write(root, 'Source/PCH/pch.h', '#pragma once\n')
             write(root, 'CMakeLists.txt', '''\
                 cmake_minimum_required(VERSION 3.25)
                 project(dolphin-emu LANGUAGES CXX)
@@ -308,10 +309,20 @@ class NativeExecutionTests(unittest.TestCase):
                 add_library(build_pch STATIC part.cpp)
                 add_library(use_pch INTERFACE)
                 add_dependencies(use_pch build_pch)
-                add_library(core STATIC part.cpp)
+                add_custom_command(OUTPUT AchievementApprovedHash.h
+                  COMMAND "${CMAKE_COMMAND}" -E touch AchievementApprovedHash.h)
+                add_library(core STATIC part.cpp AchievementApprovedHash.h)
                 target_link_libraries(core PRIVATE use_pch)
                 add_library(ordinary STATIC part.cpp)
-                foreach(t build_pch core ordinary)
+                set(ENABLE_QT ON)
+                add_executable(dolphin-emu part.cpp)
+                # This fixture checks target wiring, not a simulated Qt build.
+                # The native Windows job compiles the actual Qt headers and moc.
+                add_dependencies(dolphin-emu build_pch)
+                set_property(TARGET dolphin-emu PROPERTY AUTOGEN_TARGET_DEPENDS ordinary)
+                file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/qt.txt" CONTENT
+                  "$<TARGET_PROPERTY:dolphin-emu,PRECOMPILE_HEADERS>|$<TARGET_PROPERTY:dolphin-emu,AUTOGEN_ORIGIN_DEPENDS>|$<TARGET_PROPERTY:dolphin-emu,AUTOGEN_TARGET_DEPENDS>")
+                foreach(t build_pch core ordinary dolphin-emu)
                   target_compile_options(${t} PRIVATE "$<$<CONFIG:Release>:/O2>" "$<$<CONFIG:Release>:/Ob2>")
                   set_target_properties(${t} PROPERTIES LINKER_LANGUAGE CXX
                     C_COMPILER_LAUNCHER bad-inherited CXX_COMPILER_LAUNCHER bad-inherited)
@@ -330,6 +341,12 @@ class NativeExecutionTests(unittest.TestCase):
                 self.assertEqual((root / 'build' / f'{target}.txt').read_text(), '||ON')
             self.assertEqual((root / 'build/ordinary.txt').read_text(),
                              'cmake;-E;env|cmake;-E;env|ON')
+            self.assertEqual((root / 'build/dolphin-emu.txt').read_text(), '||')
+            qt = (root / 'build/qt.txt').read_text()
+            self.assertIn('Source/PCH/pch.h', qt)
+            self.assertIn('QtWidgets', qt)
+            self.assertIn('|OFF|ordinary;build_pch;', qt)
+            self.assertTrue(qt.endswith('/build/AchievementApprovedHash.h'))
             commands = json.loads((root / 'build/compile_commands.json').read_text())
             for command in commands:
                 options = command['command'].split()
@@ -340,6 +357,7 @@ class NativeExecutionTests(unittest.TestCase):
             run('cmake', '-S', root, '-B', root / 'manual', '-G', 'Ninja',
                 f'-DCMAKE_PROJECT_dolphin-emu_INCLUDE={PRESET}',
                 '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', cwd=root, env=env)
+            self.assertTrue((root / 'manual/qt.txt').read_text().endswith('|ON|ordinary'), (root / 'manual/qt.txt').read_text())
             commands = json.loads((root / 'manual/compile_commands.json').read_text())
             for command in commands:
                 options = command['command'].split()

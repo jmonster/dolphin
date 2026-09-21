@@ -103,7 +103,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(uname -m)" = "$ARCH"
-          cmake -S . -B build-switch2kit -G Ninja \
+          ps -axo pid,pcpu,comm | sort -rn -k2 | sed -n '1,15p'
+          cmake --profiling-format=google-trace \
+            --profiling-output="$PWD/switch2kit-configure-profile.json" \
+            -S . -B build-switch2kit -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
             -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_SYSROOT="$SDKROOT" \
@@ -155,6 +158,9 @@ jobs:
             switch2kit-*.log
             switch2kit-*.sample
             switch2kit-validation.json
+            switch2kit-configure-profile.json
+            build-switch2kit/build.ninja
+            build-switch2kit/compile_commands.json
             build-switch2kit/CMakeCache.txt
             build-switch2kit/CMakeFiles/CMakeConfigureLog.yaml
       # Keep valid compiler objects even when a later build/test is cancelled.
