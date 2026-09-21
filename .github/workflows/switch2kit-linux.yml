@@ -18,21 +18,20 @@ jobs:
       # One cache archive per job, not network requests for every object.
       SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
       SCCACHE_CACHE_SIZE: 2G
-      GIT_CONFIG_COUNT: 1
-      GIT_CONFIG_KEY_0: submodule.fetchJobs
-      GIT_CONFIG_VALUE_0: 8
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
       - name: Install native dependencies
         run: |
           apt-get update
           apt-get install -y --no-install-recommends build-essential clang clang-19 cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
           git config --global --add safe.directory "$PWD"
+      - name: Fetch and verify native gitlinks in parallel
+        run: python3 Tools/checkout_native.py
       - name: Verify upstream C++23 library support before compiling Dolphin
         run: |
           # Clang 18 cannot use libstdc++'s std::expected. Do not spoof feature macros.
@@ -118,9 +117,6 @@ jobs:
       # One cache archive per job, not network requests for every object.
       SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
       SCCACHE_CACHE_SIZE: 2G
-      GIT_CONFIG_COUNT: 1
-      GIT_CONFIG_KEY_0: submodule.fetchJobs
-      GIT_CONFIG_VALUE_0: 8
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
@@ -151,7 +147,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+          submodules: false
+      - name: Fetch and verify native gitlinks in parallel
+        run: |
+          git config --global --add safe.directory "$PWD"
+          python3 Tools/checkout_native.py
       - name: Restore compiler objects (never test results or applications)
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:

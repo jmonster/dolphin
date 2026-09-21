@@ -27,16 +27,15 @@ jobs:
       # One cache archive per job, not network requests for every object.
       SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
       SCCACHE_CACHE_SIZE: 2G
-      GIT_CONFIG_COUNT: 1
-      GIT_CONFIG_KEY_0: submodule.fetchJobs
-      GIT_CONFIG_VALUE_0: 8
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          submodules: recursive
+          submodules: false
           persist-credentials: false
+      - name: Fetch and verify native gitlinks in parallel
+        run: python3 Tools/checkout_native.py
       - name: Restore compiler objects (never test results or applications)
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:

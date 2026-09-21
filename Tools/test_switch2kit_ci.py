@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from switch2kit_ci import TARGETS, changed_paths, select_checks
+from test_native_ci_setup import NativeCacheSetupTests, NativeCheckoutTests
 
 NATIVE = {'macos', 'linux', 'windows'}
 
