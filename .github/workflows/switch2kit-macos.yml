@@ -19,8 +19,10 @@ jobs:
           - os: macos-15-intel
             arch: x86_64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 60 || 10 }}
     env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       SCCACHE_GHA_ENABLED: 'true'
       CMAKE_C_COMPILER_LAUNCHER: sccache
@@ -35,7 +37,15 @@ jobs:
         with:
           version: v0.10.0
       - name: Install build dependencies
-        run: brew install cmake ninja nasm automake libtool qt@6
+        run: |
+          set -euo pipefail
+          missing=()
+          for formula in cmake ninja nasm automake libtool qt@6; do
+            brew list --versions "$formula" >/dev/null 2>&1 || missing+=("$formula")
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            brew install "${missing[@]}"
+          fi
       - name: Check source pin and integration
         run: |
           test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = "$(git ls-tree HEAD Externals/Switch2Kit | awk '{print $3}')"
@@ -47,18 +57,30 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          set -o pipefail
+          set -euo pipefail
+          # CI validates a complete native application, not emulator throughput.
+          # Keep Release defines/ABI and every launch check; avoid optimizing
+          # thousands of unrelated C/C++ files. Explicit artifact builds retain
+          # upstream's ordinary optimized Release flags.
+          flags=()
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then
+            flags=("-DCMAKE_C_FLAGS_RELEASE=-O0 -DNDEBUG"
+                   "-DCMAKE_CXX_FLAGS_RELEASE=-O0 -DNDEBUG")
+          fi
           test "$(uname -m)" = "$ARCH"
           cmake -S . -B build-switch2kit -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_BUILD_TYPE=Release "${flags[@]}" -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
             -DENABLE_SWITCH2KIT=ON -DENABLE_QT=ON -DENABLE_SDL=ON \
             -DUSE_SYSTEM_SDL3=OFF \
             -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
             -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON \
             2>&1 | tee switch2kit-configure.log
-          cmake --build build-switch2kit --target dolphin-emu --parallel 3 \
+          cmake --build build-switch2kit --target dolphin-emu --parallel "$(sysctl -n hw.logicalcpu)" \
             2>&1 | tee switch2kit-build.log
+      - name: Compiler cache statistics
+        if: always()
+        run: sccache --show-stats
       - name: Inspect and archive application
         env:
           ARCH: ${{ matrix.arch }}

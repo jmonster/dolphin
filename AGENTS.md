@@ -48,6 +48,30 @@ Cancel obsolete runs, fail early, and upload application artifacts only when
 requested. Do not add nightly builds, extra matrices or broader triggers without
 an explicit need and a measured runtime/cost impact.
 
+## Automatic-job runtime budget
+
+Every automatic job, including native setup/build/package/launch work, has a
+10-minute maximum. The focused suite keeps its stricter existing limits. A timed
+out or cancelled native job is a failure, not a successful fast run. Do not raise
+this budget, shard the same work into more billed jobs, switch to larger paid
+runners, or delete checks to make the dashboard look fast. A green run above the
+budget is not merge-ready. Verify actual job durations on the exact PR head.
+
+Native macOS/Windows smoke builds keep Release defines/runtime ABI but compile
+C/C++ without expensive optimization. They still compile/link the complete real
+application and execute every architecture/dependency/relocation/archive check.
+Linux's optimized builds/upstream unit suite, real Swift SDK tests and sanitizer
+regressions remain unchanged. These smoke builds do not establish optimized
+macOS/Windows code-generation or gameplay performance correctness. The existing
+explicit artifact build uses normal optimized Release flags; local developer
+build defaults are unchanged. Do not describe unoptimized smoke builds as release
+qualification or distribute them as optimized releases.
+
+Cache the pinned Windows installer, do not upgrade already installed Homebrew
+build dependencies, and use the CPUs already assigned to each standard runner.
+Compiler-cache statistics must be visible; measure rather than assume a hit.
+Cold-cache failures must be fixed, not hidden by reporting only a warm rerun.
+
 ## Claims and review
 
 A source check is not a native build; a fixture is not the actual SDK; an SDK test

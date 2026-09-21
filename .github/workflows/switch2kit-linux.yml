@@ -12,7 +12,7 @@ jobs:
   linux:
     runs-on: ubuntu-24.04
     container: swift:6.2.1-noble
-    timeout-minutes: 45
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 10 }}
     env:
       DEBIAN_FRONTEND: noninteractive
       SCCACHE_GHA_ENABLED: 'true'
@@ -87,7 +87,7 @@ jobs:
       image: ubuntu:24.04
       # Upstream memory-mapping tests exceed Docker's default 64 MiB /dev/shm.
       options: --shm-size=512m
-    timeout-minutes: 45
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 10 }}
     env:
       DEBIAN_FRONTEND: noninteractive
       SCCACHE_GHA_ENABLED: 'true'

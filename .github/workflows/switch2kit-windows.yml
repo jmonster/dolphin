@@ -11,7 +11,7 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-2025-vs2026
-    timeout-minutes: 45
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 10 }}
     env:
       VCPKG_MAX_CONCURRENCY: 3
       SCCACHE_GHA_ENABLED: 'true'
@@ -31,11 +31,24 @@ jobs:
           # Swift 6.2 ships Clang 19, which the VS 2026 STL rejects.
           swift-version: swift-6.3.3-release
           swift-build: 6.3.3-RELEASE
+          cache: true
       - name: Build the complete controller-enabled application
         shell: pwsh
         run: |
-          & ./Tools/build-switch2kit-windows.ps1 2>&1 | Tee-Object windows-build.log
+          # Match the Release CRT/defines without spending CI time optimizing
+          # the emulator. The SDK build and all native launch checks stay real.
+          # Explicit artifact builds keep the upstream optimized Release flags.
+          $cmakeArgs = @()
+          if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') {
+            $cmakeArgs = @('-DCMAKE_C_FLAGS_RELEASE=/MD /Od /Ob0 /DNDEBUG',
+                           '-DCMAKE_CXX_FLAGS_RELEASE=/MD /Od /Ob0 /DNDEBUG')
+          }
+          & ./Tools/build-switch2kit-windows.ps1 -CMakeArgs $cmakeArgs 2>&1 | Tee-Object windows-build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compiler cache statistics
+        if: always()
+        shell: pwsh
+        run: sccache --show-stats
       - name: Stage and launch the application away from the build tree
         shell: pwsh
         run: |
