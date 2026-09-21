@@ -29,6 +29,26 @@ function(switch2kit_ci_precompile_headers)
   endif()
   foreach(target common audiocommon inputcommon videocommon discio core dolphin-emu)
     if(TARGET ${target})
+      # Upstream gives some files different flags (e.g. ARM crypto ISA flags).
+      # They still compile normally; a target-wide PCH cannot represent those
+      # per-source options. Resolve properties in the target's source directory.
+      get_target_property(source_dir ${target} SOURCE_DIR)
+      get_target_property(sources ${target} SOURCES)
+      foreach(source IN LISTS sources)
+        if(source MATCHES "\\$<")
+          continue()
+        endif()
+        if(NOT IS_ABSOLUTE "${source}")
+          set(source "${source_dir}/${source}")
+        endif()
+        foreach(property COMPILE_FLAGS COMPILE_OPTIONS COMPILE_DEFINITIONS)
+          get_source_file_property(value "${source}" DIRECTORY "${source_dir}" ${property})
+          if(value)
+            set_source_files_properties("${source}" DIRECTORY "${source_dir}"
+              PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+          endif()
+        endforeach()
+      endforeach()
       target_precompile_headers(${target} PRIVATE
         "$<$<COMPILE_LANGUAGE:CXX>:${PROJECT_SOURCE_DIR}/Source/PCH/pch.h>")
     endif()
