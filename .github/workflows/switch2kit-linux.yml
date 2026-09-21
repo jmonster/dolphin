@@ -40,14 +40,16 @@ jobs:
             'static_assert(std::expected<int, int>(42).value() == 42);' | \
             /usr/bin/clang++-19 -std=c++23 -x c++ -fsyntax-only -
       - name: Restore compiler objects (never test results or applications)
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: compiler-objects
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          key: s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
             s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
+        id: compiler-cache
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
           version: v0.10.0
@@ -94,7 +96,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Native diagnostics
-        if: failure() || github.event_name == 'workflow_dispatch'
+        if: failure() || cancelled() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-linux-diagnostics
@@ -102,6 +104,14 @@ jobs:
             linux-*.log
             linux-launch.json
           retention-days: 7
+      # Keep valid compiler objects even when a later build/test is cancelled.
+      # Never save build trees, applications, configuration answers or test results.
+      - name: Save compiler objects after native validation
+        if: always() && steps.compiler-cache.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.compiler-objects.outputs.cache-primary-key }}
 
   disabled:
     needs: linux
@@ -155,14 +165,16 @@ jobs:
           git config --global --add safe.directory "$PWD"
           python3 Tools/checkout_native.py
       - name: Restore compiler objects (never test results or applications)
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: compiler-objects
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          key: s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
             s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
+        id: compiler-cache
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
           version: v0.10.0
@@ -178,7 +190,9 @@ jobs:
             -DENABLE_SWITCH2KIT=OFF -DENABLE_SDL=ON -DENABLE_QT=ON \
             -DUSE_SYSTEM_SDL3=OFF -DENABLE_TESTS=ON -DENABLE_VULKAN=OFF \
             -DENABLE_AUTOUPDATE=OFF 2>&1 | tee disabled-configure.log
-          cmake --build build-switch2kit --target dolphin-emu --parallel "$(nproc)" 2>&1 | tee disabled-build.log
+          # Let Ninja schedule the application and all upstream test objects together.
+          cmake --build build-switch2kit --target dolphin-emu tests --parallel "$(nproc)" 2>&1 | tee disabled-build.log
+          # Building tests does not execute them; retain the complete CTest target.
           cmake --build build-switch2kit --target unittests --parallel "$(nproc)" 2>&1 | tee upstream-unittests.log
           ldd build-switch2kit/Binaries/dolphin-emu | tee disabled-dependencies.log
           ! grep -q 'not found' disabled-dependencies.log
@@ -193,7 +207,7 @@ jobs:
         if: always()
         run: sccache --show-stats
       - name: Backend-disabled build diagnostics
-        if: failure() || github.event_name == 'workflow_dispatch'
+        if: failure() || cancelled() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-without-Switch2Kit-linux-diagnostics
@@ -201,3 +215,11 @@ jobs:
             disabled-*.log
             upstream-unittests.log
           retention-days: 7
+      # Keep valid compiler objects even when a later build/test is cancelled.
+      # Never save build trees, applications, configuration answers or test results.
+      - name: Save compiler objects after native validation
+        if: always() && steps.compiler-cache.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.compiler-objects.outputs.cache-primary-key }}

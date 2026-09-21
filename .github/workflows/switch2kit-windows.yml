@@ -28,14 +28,16 @@ jobs:
       - name: Fetch and verify native gitlinks in parallel
         run: python Tools/checkout_native.py
       - name: Restore compiler objects (never test results or applications)
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: compiler-objects
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v3-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          key: s2k-objects-v3-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             s2k-objects-v3-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
             s2k-objects-v3-windows-vs2026-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
+        id: compiler-cache
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
           version: v0.10.0
@@ -85,7 +87,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Native diagnostics
-        if: failure() || github.event_name == 'workflow_dispatch'
+        if: failure() || cancelled() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Dolphin-Switch2Kit-windows-diagnostics
@@ -93,3 +95,11 @@ jobs:
             windows-*.log
             windows-launch.json
           retention-days: 7
+      # Keep valid compiler objects even when a later build/test is cancelled.
+      # Never save build trees, applications, configuration answers or test results.
+      - name: Save compiler objects after native validation
+        if: always() && steps.compiler-cache.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.compiler-objects.outputs.cache-primary-key }}
