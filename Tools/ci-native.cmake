@@ -20,18 +20,35 @@ if(NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
   elseif(APPLE)
     set(CMAKE_C_FLAGS_RELEASE "-O0 -DNDEBUG")
     set(CMAKE_CXX_FLAGS_RELEASE "-O0 -DNDEBUG")
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Keep the complete upstream Linux suite optimized. Explicit artifacts keep
+    # the upstream Release optimizer; automatic qualification uses -O1.
+    set(CMAKE_C_FLAGS_RELEASE "-O1 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O1 -DNDEBUG")
   endif()
 endif()
 message(STATUS "Native CI C Release flags: ${CMAKE_C_FLAGS_RELEASE}")
 message(STATUS "Native CI C++ Release flags: ${CMAKE_CXX_FLAGS_RELEASE}")
 
-# Configure probes compile once and almost never hit the object cache. Do not
-# route hundreds of feature checks through another compiler-wrapper process.
-# Restore launchers on actual build targets after configuration, below.
+# Use a CI-specific variable, not CMAKE_*_COMPILER_LAUNCHER in the job's
+# environment: those standard variables also reach every nested SDK/fixture
+# configuration and try_compile project. Clearing a normal variable alone does
+# not clear that environment or its cache entry. Keep actual feature/link probes.
 set(_switch2kit_c_launcher "${CMAKE_C_COMPILER_LAUNCHER}")
 set(_switch2kit_cxx_launcher "${CMAKE_CXX_COMPILER_LAUNCHER}")
-set(CMAKE_C_COMPILER_LAUNCHER "")
-set(CMAKE_CXX_COMPILER_LAUNCHER "")
+if(DEFINED ENV{S2K_CI_COMPILER_CACHE})
+  if(NOT _switch2kit_c_launcher)
+    set(_switch2kit_c_launcher "$ENV{S2K_CI_COMPILER_CACHE}")
+  endif()
+  if(NOT _switch2kit_cxx_launcher)
+    set(_switch2kit_cxx_launcher "$ENV{S2K_CI_COMPILER_CACHE}")
+  endif()
+endif()
+foreach(language C CXX)
+  set(CMAKE_${language}_COMPILER_LAUNCHER "" CACHE STRING "Native CI target-only cache" FORCE)
+  set(CMAKE_${language}_COMPILER_LAUNCHER "")
+  unset(ENV{CMAKE_${language}_COMPILER_LAUNCHER})
+endforeach()
 
 # Windows already shares upstream's PCH. On POSIX, compile the same upstream
 # header once per target instead of parsing it for every translation unit.
@@ -42,7 +59,9 @@ function(switch2kit_ci_precompile_headers)
   if(MSVC)
     return()
   endif()
-  foreach(target common audiocommon inputcommon videocommon discio core dolphin-emu)
+  foreach(target common audiocommon inputcommon videocommon discio core uicommon
+                 videoogl videonull videosoftware videometal videovulkan
+                 dolphin-tool dolphin-emu)
     if(TARGET ${target})
       # Upstream gives some files different flags (e.g. ARM crypto ISA flags).
       # They still compile normally; a target-wide PCH cannot represent those
@@ -85,12 +104,35 @@ function(switch2kit_ci_cache_targets directory)
     if(kind MATCHES "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
       get_target_property(pch ${target} PRECOMPILE_HEADERS)
       get_target_property(reuse_pch ${target} PRECOMPILE_HEADERS_REUSE_FROM)
-      # Native PCH consumption must not be turned back into expensive per-file
-      # preprocessing. Other targets retain the bounded compiler-object cache.
-      if(NOT pch AND NOT reuse_pch)
+      get_target_property(links ${target} LINK_LIBRARIES)
+      # Source/PCH implements MSVC's /Yc and /Yu manually, through build_pch
+      # and the use_pch interface. PRECOMPILE_HEADERS does not describe it.
+      set(manual_pch FALSE)
+      if(MSVC AND (target STREQUAL "build_pch" OR "use_pch" IN_LIST links))
+        set(manual_pch TRUE)
+      endif()
+      if(pch OR reuse_pch OR manual_pch)
+        # Explicitly clear inherited launchers as well. Merely doing nothing
+        # left SDL and child-project PCH consumers going through sccache.
+        set_target_properties(${target} PROPERTIES
+          C_COMPILER_LAUNCHER "" CXX_COMPILER_LAUNCHER "")
+      else()
         set_target_properties(${target} PROPERTIES
           C_COMPILER_LAUNCHER "${_switch2kit_c_launcher}"
           CXX_COMPILER_LAUNCHER "${_switch2kit_cxx_launcher}")
+      endif()
+      if(kind MATCHES "^(STATIC_LIBRARY|OBJECT_LIBRARY)$" AND NOT manual_pch)
+        # Keep manual MSVC PCH ordering opaque to this optimization.
+        # CMake removes only unnecessary ordering edges; generated sources,
+        # custom commands and explicit dependencies remain prerequisites.
+        set_property(TARGET ${target} PROPERTY OPTIMIZE_DEPENDENCIES ON)
+      endif()
+      if(NOT MSVC AND NOT "$ENV{GITHUB_EVENT_NAME}" STREQUAL "workflow_dispatch")
+        # Upstream appends -ggdb even in Release. Keep line-level backtraces,
+        # without emitting full type debug information for every smoke object.
+        # Append after upstream initialization; never change sanitizer options.
+        target_compile_options(${target} PRIVATE
+          "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:-g1>")
       endif()
     endif()
   endforeach()

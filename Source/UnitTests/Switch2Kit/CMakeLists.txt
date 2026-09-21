@@ -16,6 +16,7 @@ function(add_switch2kit_test name script)
 endfunction()
 
 add_switch2kit_test(ChangeSelection test_switch2kit_ci.py)
+add_switch2kit_test(NativeExecution test_native_ci_execution.py)
 add_switch2kit_test(Integration test_switch2kit.py)
 add_switch2kit_test(AutoConnect test_switch2kit_autoconnect.py)
 add_switch2kit_test(Mapping test_switch2kit_mapping.py --sanitize)

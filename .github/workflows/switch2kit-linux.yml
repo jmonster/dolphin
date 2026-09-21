@@ -16,10 +16,10 @@ jobs:
     env:
       DEBIAN_FRONTEND: noninteractive
       # One cache archive per job, not network requests for every object.
-      SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
+      SCCACHE_DIR: /github/home/.cache/sccache
       SCCACHE_CACHE_SIZE: 2G
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+      # Configure probes and standalone sanitizer/SDK tests must compile directly.
+      S2K_CI_COMPILER_CACHE: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -42,10 +42,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          key: s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
           restore-keys: |
-            s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
-            s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+            s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
@@ -115,10 +115,10 @@ jobs:
     env:
       DEBIAN_FRONTEND: noninteractive
       # One cache archive per job, not network requests for every object.
-      SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
+      SCCACHE_DIR: /github/home/.cache/sccache
       SCCACHE_CACHE_SIZE: 2G
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+      # Configure probes and standalone sanitizer/SDK tests must compile directly.
+      S2K_CI_COMPILER_CACHE: sccache
     steps:
       - name: Check shared memory before installing dependencies or compiling
         shell: bash
@@ -156,10 +156,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          key: s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
           restore-keys: |
-            s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
-            s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+            s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v3-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:

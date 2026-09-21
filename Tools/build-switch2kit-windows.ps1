@@ -39,7 +39,11 @@ Write-Output "Visual Studio: $vs"
 Write-Output "Swift target: $($target.target.triple)"
 # Keep runtime lookup local to this process and its launched application.
 $env:PATH = (($target.paths.runtimeLibraryPaths | Where-Object { Test-Path $_ }) -join ';') + ';' + $env:PATH
-git submodule update --init --recursive
+if ($env:GITHUB_ACTIONS -eq 'true') {
+    python Tools/checkout_native.py --verify
+} else {
+    git submodule update --init --recursive
+}
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cmake -S . -B build-switch2kit-windows -G Ninja -DCMAKE_BUILD_TYPE=Release `
     -DENABLE_SWITCH2KIT=ON -DENABLE_SDL=ON -DENABLE_QT=ON -DUSE_SYSTEM_SDL3=OFF `

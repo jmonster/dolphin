@@ -23,12 +23,15 @@ jobs:
     env:
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALL_CLEANUP: 1
+      # Do not upgrade unrelated installed Qt modules after installing qtbase.
+      # Required components and the complete relocated application are validated below.
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       # One cache archive per job, not network requests for every object.
       SCCACHE_DIR: ${{ github.workspace }}/.ci-cache/sccache
       SCCACHE_CACHE_SIZE: 2G
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+      # Configure probes and standalone sanitizer/SDK tests must compile directly.
+      S2K_CI_COMPILER_CACHE: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -40,10 +43,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v2-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          key: s2k-objects-v3-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
           restore-keys: |
-            s2k-objects-v2-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
-            s2k-objects-v2-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+            s2k-objects-v3-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v3-${{ matrix.os }}-${{ matrix.arch }}-xcode26.3-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
@@ -51,9 +54,10 @@ jobs:
       - name: Install build dependencies
         run: |
           set -euo pipefail
+          installed="$(brew list --formula --versions | awk '{print $1}')"
           missing=()
           for formula in cmake ninja nasm automake libtool qtbase qtsvg; do
-            brew list --versions "$formula" >/dev/null 2>&1 || missing+=("$formula")
+            grep -Fxq "$formula" <<< "$installed" || missing+=("$formula")
           done
           if [ "${#missing[@]}" -ne 0 ]; then
             brew install "${missing[@]}"
@@ -61,6 +65,14 @@ jobs:
           # Split Qt formulae share Homebrew's linked installation prefix.
           # A qtbase keg is not a complete Qt prefix: Svg lives in qtsvg.
           qt_prefix="$(brew --prefix)"
+          echo "S2K_QT_PREFIX=$qt_prefix" >> "$GITHUB_ENV"
+          # Resolve the selected Xcode compiler once, rather than invoking the
+          # /usr/bin toolchain selector for every probe and translation unit.
+          cc="$(xcrun --find clang)"
+          cxx="$(xcrun --find clang++)"
+          test -x "$cc" && test -x "$cxx"
+          printf 'CC=%s\nCXX=%s\nOBJC=%s\nOBJCXX=%s\n' \
+            "$cc" "$cxx" "$cc" "$cxx" >> "$GITHUB_ENV"
           for component in Qt6 Qt6Svg; do
             test -f "$qt_prefix/lib/cmake/$component/${component}Config.cmake" || {
               echo "::error::Missing linked Qt package: $component in $qt_prefix" >&2
@@ -86,8 +98,8 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
             -DENABLE_SWITCH2KIT=ON -DENABLE_QT=ON -DENABLE_SDL=ON \
             -DUSE_SYSTEM_SDL3=OFF \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix)" \
-            -DQt6_DIR="$(brew --prefix)/lib/cmake/Qt6" \
+            -DCMAKE_PREFIX_PATH="$S2K_QT_PREFIX" \
+            -DQt6_DIR="$S2K_QT_PREFIX/lib/cmake/Qt6" \
             -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON \
             2>&1 | tee switch2kit-configure.log
           cmake --build build-switch2kit --target dolphin-emu --parallel "$(sysctl -n hw.logicalcpu)" \
