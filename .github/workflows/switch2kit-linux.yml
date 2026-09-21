@@ -31,16 +31,22 @@ jobs:
       - name: Install native dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential clang cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
+          apt-get install -y --no-install-recommends build-essential clang clang-19 cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus xvfb xauth openbox wmctrl x11-utils
           git config --global --add safe.directory "$PWD"
+      - name: Verify upstream C++23 library support before compiling Dolphin
+        run: |
+          # Clang 18 cannot use libstdc++'s std::expected. Do not spoof feature macros.
+          printf '%s\n' '#include <expected>' \
+            'static_assert(std::expected<int, int>(42).value() == 42);' | \
+            /usr/bin/clang++-19 -std=c++23 -x c++ -fsyntax-only -
       - name: Restore compiler objects (never test results or applications)
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          key: s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
           restore-keys: |
-            s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
-            s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+            s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
@@ -50,7 +56,7 @@ jobs:
         run: |
           set -o pipefail
           S2K_BUILD_JOBS="$(nproc)" bash Tools/build-switch2kit-linux.sh \
-            -DCMAKE_C_COMPILER=/usr/bin/clang-18 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-18 \
+            -DCMAKE_C_COMPILER=/usr/bin/clang-19 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-19 \
             "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
             2>&1 | tee linux-build.log
       - name: Compiler cache statistics
@@ -131,11 +137,17 @@ jobs:
       - name: Install ordinary native dependencies without Swift
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates build-essential clang cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus
+          apt-get install -y --no-install-recommends git ca-certificates build-essential clang clang-19 cmake ninja-build python3 pkg-config qt6-base-dev qt6-base-private-dev qt6-svg-dev libbluetooth-dev libevdev-dev libudev-dev libusb-1.0-0-dev libasound2-dev libpulse-dev libx11-dev libxi-dev libxrandr-dev libegl1-mesa-dev libgl1-mesa-dev libsystemd0 dbus
           if command -v swift || command -v swiftc; then
             echo 'The backend-disabled qualification image must not contain Swift.' >&2
             exit 1
           fi
+      - name: Verify upstream C++23 library support before compiling Dolphin
+        run: |
+          # Use the same real compiler/library pair as the enabled build.
+          printf '%s\n' '#include <expected>' \
+            'static_assert(std::expected<int, int>(42).value() == 42);' | \
+            /usr/bin/clang++-19 -std=c++23 -x c++ -fsyntax-only -
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -144,10 +156,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
+          key: s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-${{ github.job }}
           restore-keys: |
-            s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
-            s2k-objects-v2-linux-clang18-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
+            s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-${{ github.sha }}-
+            s2k-objects-v2-linux-clang19-${{ github.event_name == 'workflow_dispatch' && 'release' || 'smoke' }}-
       - name: Cache native compiler results (tests still run)
         uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
         with:
@@ -158,7 +170,7 @@ jobs:
           set -euo pipefail
           git config --global --add safe.directory "$PWD"
           cmake -S . -B build-switch2kit -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=/usr/bin/clang-18 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-18 \
+            -DCMAKE_C_COMPILER=/usr/bin/clang-19 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-19 \
             "-DCMAKE_PROJECT_dolphin-emu_INCLUDE=$PWD/Tools/ci-native.cmake" \
             -DCMAKE_INSTALL_PREFIX="$PWD/build-switch2kit/install" \
             -DENABLE_SWITCH2KIT=OFF -DENABLE_SDL=ON -DENABLE_QT=ON \
