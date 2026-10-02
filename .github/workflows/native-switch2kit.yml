@@ -1,6 +1,9 @@
 # Upstream CMake/CTest plus scoped Switch2Kit qualification. See AGENTS.md.
 name: Native Switch2Kit
 on:
+  # A one-purpose qualification branch; never broaden this to ordinary pushes.
+  push:
+    branches: [qualification/dolphin-sdk-77ee4fa]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -28,11 +31,24 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
+      - name: Record and verify the frozen qualification inputs
+        if: github.event_name == 'push'
+        run: |
+          test "$(git rev-parse HEAD:Externals/Switch2Kit)" = 77ee4fa3cac849106f571ccfec6c5e582b7c0dd2
+          test "$(git rev-parse HEAD:Externals/SDL/SDL)" = f87239e71e42da91ca317a12eefb82cfbf3393eb
+          {
+            echo "Dolphin candidate: $(git rev-parse HEAD)"
+            echo 'Dolphin source base: 5001d9b733c7be6ea6ca5d9c1138c16b9a275405'
+            echo 'SDK candidate: 77ee4fa3cac849106f571ccfec6c5e582b7c0dd2'
+            echo 'SDL pin: f87239e71e42da91ca317a12eefb82cfbf3393eb (3.4.12)'
+            echo 'Automatic budgets unchanged: focused 3m, SDK 5m, native 10m.'
+            echo 'Not optimized macOS/Windows release or hardware qualification.'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Select validation from the actual changed inputs
         id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          TARGET: ${{ inputs.target || 'tests' }}
+          TARGET: ${{ github.event_name == 'push' && 'all' || inputs.target || 'tests' }}
         run: |
           if [ -n "$BASE_SHA" ]; then
             git fetch --no-tags --depth 1 origin "$BASE_SHA"
@@ -69,7 +85,7 @@ jobs:
           set -o pipefail
           swift test --package-path Externals/Switch2Kit 2>&1 | tee switch2kit-sdk-tests.log
           bash Externals/Switch2Kit/tests/rumble/run.sh 2>&1 | tee switch2kit-motor-tests.log
-          S2K_SDL_SOURCE="$PWD/Externals/SDL/SDL" \
+          S2K_SDL_SOURCE="$PWD/Externals/SDL/SDL" S2K_EXPECT_SDL_VERSION=3004012 \
             bash Externals/Switch2Kit/tests/sdl-inprocess/verify.sh \
             2>&1 | tee switch2kit-sdl-tests.log
       - name: SDK test diagnostics
