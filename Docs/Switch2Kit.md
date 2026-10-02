@@ -13,9 +13,9 @@ In **Controllers**, find **Switch 2 Controllers**, click **Find Controllers**, a
 Bluetooth access and hold the controller's Sync button. Close other applications
 managing the same controller. A manual search lasts 60 seconds; use Find again to retry.
 
-Select **Switch2Kit GameCube** or **Switch2Kit Pro Controller 2** in the physical-device
-dropdown beside the desired GameCube port. This selects **Standard Controller** and
-applies the recommended buttons, sticks, triggers and rumble mapping. A device can be
+Select **GameCube (n)** or **Pro Controller (n)** in the physical-device dropdown
+beside the desired GameCube port, where **n** identifies the controller. This selects
+**Standard Controller** and applies the recommended buttons, sticks, triggers and rumble mapping. A device can be
 assigned to only one active Standard Controller port through this shortcut; set its
 old port to None before moving it. Verify the controls in **Configure**, then open a game.
 
