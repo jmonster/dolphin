@@ -149,15 +149,21 @@ Disabled builds do not require Swift or raise the platform deployment target. En
 require SDL3, Qt and the platform toolchain below.
 
 **macOS:** use Xcode 26+ with Swift 6.2+, finish Xcode setup and select its Command Line Tools.
-On Apple Silicon, use a native Terminal and Homebrew rather than Rosetta.
+On Apple Silicon, use a native Terminal and Homebrew rather than Rosetta. Homebrew's
+split Qt components share its linked installation prefix; do not point CMake at the
+individual `qtbase` keg, which does not contain Qt Svg.
 
 ```sh
-brew install cmake ninja nasm automake libtool qt@6
+brew install cmake ninja nasm automake libtool qtbase qtsvg
+qt_prefix="$(brew --prefix)"
+test -f "$qt_prefix/lib/cmake/Qt6/Qt6Config.cmake"
+test -f "$qt_prefix/lib/cmake/Qt6Svg/Qt6SvgConfig.cmake"
 cmake -S . -B build-switch2kit -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
   -DENABLE_SWITCH2KIT=ON -DENABLE_SDL=ON -DENABLE_QT=ON \
-  -DUSE_SYSTEM_SDL3=OFF -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+  -DUSE_SYSTEM_SDL3=OFF -DCMAKE_PREFIX_PATH="$qt_prefix" \
+  -DQt6_DIR="$qt_prefix/lib/cmake/Qt6" \
   -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON
 cmake --build build-switch2kit --target dolphin-emu --parallel 3
 open build-switch2kit/Binaries/DolphinQt.app
