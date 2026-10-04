@@ -58,6 +58,18 @@ bool IsKnownMapping(const Common::IniFile::Section& before, int port, InputConfi
       candidate.LoadConfig(profile);
       if (SameMapping(before.GetValues(), Snapshot(&candidate).GetValues()))
         return true;
+
+      // Earlier presets swapped the physical Z and R buttons. Recognize their
+      // complete mappings with either shipped rumble setting, not partial edits.
+      profile->Set("Buttons/Z", "`Shoulder R`");
+      profile->Set("Triggers/R", "`Misc 4`");
+      for (const auto* motor : {"`Motor`", ""})
+      {
+        profile->Set("Rumble/Motor", motor);
+        candidate.LoadConfig(profile);
+        if (SameMapping(before.GetValues(), Snapshot(&candidate).GetValues()))
+          return true;
+      }
     }
   }
   return false;

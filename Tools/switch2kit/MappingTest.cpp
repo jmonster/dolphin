@@ -25,6 +25,8 @@ int main(int argc, char** argv)
 
   assert(Switch2KitMapping::Apply(nullptr, 0, gc));
   assert(pad.values.values.at("Buttons/A") == "`Button S`");
+  assert(pad.values.values.at("Buttons/Z") == "`Misc 4`");
+  assert(pad.values.values.at("Triggers/R") == "`Shoulder R`");
   assert(pad.values.values.at("Rumble/Motor") == "`Motor`");
   assert(pad.values.values.at("Device") == gc);
   assert(Fake::questions == 0 && Fake::saves == 1 && Fake::textures == 1);
@@ -33,13 +35,30 @@ int main(int argc, char** argv)
   assert(Switch2KitMapping::Apply(nullptr, 0, pro));
   assert(pad.values.values.at("Buttons/A") == "`Button E`");
   assert(pad.values.values.at("Buttons/Y") == "`Button W`");
+  assert(pad.values.values.at("Buttons/Z") == "`Shoulder R`");
+  assert(pad.values.values.at("Triggers/R") == "`Misc 4`");
   assert(Fake::questions == 0);
   assert(Switch2KitMapping::Apply(nullptr, 0, gc));
   pad.values.Set("Rumble/Motor", "");  // Legacy shipped GC preset.
   assert(Switch2KitMapping::Apply(nullptr, 0, gc) && Fake::questions == 0);
+  for (const auto* motor : {"`Motor`", ""})
+  {
+    // Both shipped versions of the old Z/R mapping are presets, not custom edits.
+    pad.values.Set("Buttons/Z", "`Shoulder R`");
+    pad.values.Set("Triggers/R", "`Misc 4`");
+    pad.values.Set("Rumble/Motor", motor);
+    assert(Switch2KitMapping::Apply(nullptr, 0, gc));
+    assert(pad.values.values.at("Buttons/Z") == "`Misc 4`");
+    assert(pad.values.values.at("Triggers/R") == "`Shoulder R`");
+    assert(pad.values.values.at("Rumble/Motor") == "`Motor`");
+    assert(Fake::questions == 0);
+  }
   assert(config.pads[1].values.GetValues().empty());
   std::cout << "PASS exact device names, initial/default/legacy presets, both models and per-port isolation\n";
 
+  // An old preset with custom calibration must still require confirmation and backup.
+  pad.values.Set("Buttons/Z", "`Shoulder R`");
+  pad.values.Set("Triggers/R", "`Misc 4`");
   pad.values.Set("Main Stick/Dead Zone", "17.0");
   const auto before = pad.values.GetValues();
   const int saves = Fake::saves;

@@ -20,7 +20,7 @@ class Switch2KitIntegrationTests(unittest.TestCase):
         profile = self.profile()
         self.assertEqual([profile[f"Buttons/{button}"] for button in "ABXY"],
                          ["`Button S`", "`Button W`", "`Button E`", "`Button N`"])
-        self.assertEqual(profile["Buttons/Z"], "`Shoulder R`")
+        self.assertEqual(profile["Buttons/Z"], "`Misc 4`")
         self.assertEqual(profile["Buttons/Start"], "`Start`")
 
     def profile(self, name="Switch2Kit GameCube"):
@@ -31,11 +31,24 @@ class Switch2KitIntegrationTests(unittest.TestCase):
 
     def test_independent_trigger_travel_and_click(self):
         profile = self.profile()
-        for side, button in (("L", 3), ("R", 4)):
-            self.assertEqual(profile[f"Triggers/{side}"], f"`Misc {button}`")
+        for side, button in (("L", "Misc 3"), ("R", "Shoulder R")):
+            self.assertEqual(profile[f"Triggers/{side}"], f"`{button}`")
             self.assertEqual(profile[f"Triggers/{side}-Analog"], f"`Trigger {side}`")
         self.assertEqual(profile["Rumble/Motor"], "`Motor`")
         self.assertNotIn("Device", profile)  # Never bind another person's SDL ordinal.
+
+    def test_gamecube_z_and_r_are_independent(self):
+        profile = self.profile()
+        bindings = {control: profile[control] for control in ("Buttons/Z", "Triggers/R")}
+        # These preset expressions are single SDL inputs. Neither button should
+        # activate the other's emulated control, including when both are held.
+        for held, expected in ((set(), set()),
+                               ({"`Misc 4`"}, {"Buttons/Z"}),
+                               ({"`Shoulder R`"}, {"Triggers/R"}),
+                               ({"`Misc 4`", "`Shoulder R`"}, {"Buttons/Z", "Triggers/R"})):
+            with self.subTest(held=held):
+                self.assertEqual({control for control, binding in bindings.items() if binding in held},
+                                 expected)
 
     def test_axis_and_dpad_names(self):
         profile = self.profile()
@@ -50,9 +63,11 @@ class Switch2KitIntegrationTests(unittest.TestCase):
         pro = self.profile("Switch2Kit Pro Controller 2")
         self.assertEqual([pro[f"Buttons/{button}"] for button in "ABXY"],
                          ["`Button E`", "`Button S`", "`Button N`", "`Button W`"])
+        self.assertEqual(pro["Buttons/Z"], "`Shoulder R`")
+        self.assertEqual(pro["Triggers/R"], "`Misc 4`")
         gc = self.profile()
         for key in gc:
-            if key not in [f"Buttons/{b}" for b in "ABXY"]:
+            if key not in [f"Buttons/{b}" for b in "ABXYZ"] + ["Triggers/R"]:
                 self.assertEqual(pro[key], gc[key])
         self.assertNotIn("Device", pro)
 
