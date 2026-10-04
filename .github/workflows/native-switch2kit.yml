@@ -1,7 +1,14 @@
+# Upstream CMake/CTest plus scoped Switch2Kit qualification. See AGENTS.md.
 name: Native Switch2Kit
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Tests only, or explicit native qualification/cache priming'
+        type: choice
+        default: tests
+        options: [tests, sdk, macos, linux, windows, all]
 permissions:
   contents: read
 concurrency:
@@ -9,25 +16,41 @@ concurrency:
   cancel-in-progress: true
 jobs:
   wiring:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      sdk: ${{ steps.scope.outputs.sdk }}
+      macos: ${{ steps.scope.outputs.macos }}
+      linux: ${{ steps.scope.outputs.linux }}
+      windows: ${{ steps.scope.outputs.windows }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Check exact-width SDL adapter capacity
+          fetch-depth: 1
+      - name: Select validation from the actual changed inputs
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TARGET: ${{ inputs.target || 'tests' }}
         run: |
-          git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
-          CXX=clang++ python3 Tools/test_switch2kit_capacity.py
-          CXX=g++ python3 Tools/test_switch2kit_capacity.py
-      - run: python3 Tools/test_switch2kit.py
-      - run: python3 Tools/test_switch2kit_autoconnect.py
-      - run: python3 Tools/test_switch2kit_mapping.py --sanitize
-      - name: Execute host lifecycle and identity regressions with sanitizers
-        run: python3 Tools/test_switch2kit_host.py --sanitize
+          if [ -n "$BASE_SHA" ]; then
+            git fetch --no-tags --depth 1 origin "$BASE_SHA"
+            python3 Tools/switch2kit_ci.py --base "$BASE_SHA"
+          else
+            python3 Tools/switch2kit_ci.py --target "$TARGET"
+          fi
+      - name: Fetch only the two dependencies used by the focused tests
+        run: git submodule update --init --depth 1 Externals/Switch2Kit Externals/SDL/SDL
+      - name: Run the additions through CTest without building the emulator
+        run: |
+          cmake -S Source/UnitTests/Switch2Kit -B build-switch2kit-tests
+          ctest --test-dir build-switch2kit-tests --output-on-failure --no-tests=error
   sdk-regressions:
-    if: github.repository == 'jmonster/dolphin'
+    needs: wiring
+    if: needs.wiring.outputs.sdk == 'true'
     runs-on: macos-15
-    timeout-minutes: 25
+    timeout-minutes: 5
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
@@ -35,7 +58,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Initialize exactly the pinned SDK and Dolphin SDL
-        run: git submodule update --init Externals/Switch2Kit Externals/SDL/SDL
+        run: git submodule update --init --depth 1 Externals/Switch2Kit Externals/SDL/SDL
+      - name: Reuse the pinned Swift test build, not a previous test result
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: Externals/Switch2Kit/.build
+          key: s2k-sdk-tests-${{ runner.os }}-${{ runner.arch }}-xcode26.3-${{ hashFiles('Externals/Switch2Kit/Package.swift', 'Externals/Switch2Kit/Package.resolved', 'Externals/Switch2Kit/Sources/**', 'Externals/Switch2Kit/Tests/**') }}
       - name: Exercise the real SDK and in-process SDL adapter without hardware
         run: |
           set -o pipefail
@@ -45,90 +73,51 @@ jobs:
             bash Externals/Switch2Kit/tests/sdl-inprocess/verify.sh \
             2>&1 | tee switch2kit-sdl-tests.log
       - name: SDK test diagnostics
-        if: always()
+        if: failure() || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Switch2Kit-sdk-regressions
           path: switch2kit-*-tests.log
   macos:
-    if: github.repository == 'jmonster/dolphin'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            arch: arm64
-          - os: macos-15-intel
-            arch: x86_64
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    needs: [wiring, sdk-regressions]
+    if: >-
+      !cancelled() && needs.wiring.result == 'success' &&
+      (needs.sdk-regressions.result == 'success' || needs.sdk-regressions.result == 'skipped') &&
+      needs.wiring.outputs.macos == 'true'
+    uses: ./.github/workflows/switch2kit-macos.yml
+  linux:
+    needs: [wiring, sdk-regressions]
+    if: >-
+      !cancelled() && needs.wiring.result == 'success' &&
+      (needs.sdk-regressions.result == 'success' || needs.sdk-regressions.result == 'skipped') &&
+      needs.wiring.outputs.linux == 'true'
+    uses: ./.github/workflows/switch2kit-linux.yml
+  windows:
+    needs: [wiring, sdk-regressions]
+    if: >-
+      !cancelled() && needs.wiring.result == 'success' &&
+      (needs.sdk-regressions.result == 'success' || needs.sdk-regressions.result == 'skipped') &&
+      needs.wiring.outputs.windows == 'true'
+    uses: ./.github/workflows/switch2kit-windows.yml
+  checks:
+    name: Switch2Kit checks
+    needs: [wiring, sdk-regressions, macos, linux, windows]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          submodules: recursive
-          persist-credentials: false
-      - name: Install build dependencies
-        run: brew install cmake ninja nasm automake libtool qt@6
-      - name: Check source pin and integration
-        run: |
-          test "$(git -C Externals/Switch2Kit rev-parse HEAD)" = "$(git ls-tree HEAD Externals/Switch2Kit | awk '{print $3}')"
-          python3 Tools/test_switch2kit.py
-          python3 Tools/test_switch2kit_autoconnect.py
-          python3 Tools/test_switch2kit_host.py --sanitize
-          python3 Tools/test_switch2kit_mapping.py --sanitize
-      - name: Build the complete application
+      - name: Require every selected check, including native qualification
         env:
-          ARCH: ${{ matrix.arch }}
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          set -o pipefail
-          test "$(uname -m)" = "$ARCH"
-          cmake -S . -B build-switch2kit -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
-            -DENABLE_SWITCH2KIT=ON -DENABLE_QT=ON -DENABLE_SDL=ON \
-            -DUSE_SYSTEM_SDL3=OFF \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
-            -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON \
-            2>&1 | tee switch2kit-configure.log
-          cmake --build build-switch2kit --target dolphin-emu --parallel 3 \
-            2>&1 | tee switch2kit-build.log
-      - name: Inspect and archive application
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          app=build-switch2kit/Binaries/DolphinQt.app
-          test -d "$app"
-          test -f "$app/Contents/Frameworks/libSwitch2KitC.dylib"
-          /usr/libexec/PlistBuddy -c 'Print :NSBluetoothAlwaysUsageDescription' "$app/Contents/Info.plist"
-          lipo "$app/Contents/MacOS/DolphinQt" -verify_arch "$ARCH"
-          lipo "$app/Contents/Frameworks/libSwitch2KitC.dylib" -verify_arch "$ARCH"
-          test -f "$app/Contents/Resources/Sys/Profiles/GCPad/Switch2Kit GameCube.ini"
-          test -f "$app/Contents/Resources/Sys/Profiles/GCPad/Switch2Kit Pro Controller 2.ini"
-          ditto -c -k --keepParent "$app" "Dolphin-Switch2Kit-$ARCH.zip"
-      - name: Launch, normally quit and relaunch the exact ZIP with build roots denied
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          python3 Tools/test_switch2kit_bundle.py "Dolphin-Switch2Kit-$ARCH.zip" \
-            --architecture "$ARCH" --report switch2kit-validation.json
-      - name: Application artifact (not hardware-qualified or notarized)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: Dolphin-Switch2Kit-${{ matrix.arch }}
-          path: |
-            Dolphin-Switch2Kit-${{ matrix.arch }}.zip
-            switch2kit-validation.json
-          if-no-files-found: error
-      - name: Build diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: Switch2Kit-${{ matrix.arch }}-diagnostics
-          path: |
-            switch2kit-*.log
-            switch2kit-*.sample
-            switch2kit-validation.json
-            build-switch2kit/CMakeCache.txt
-            build-switch2kit/CMakeFiles/CMakeConfigureLog.yaml
+          python3 - <<'PYTHON'
+          import json, os
+          jobs = json.loads(os.environ['RESULTS'])
+          assert jobs['wiring']['result'] == 'success', 'Focused tests or change selection failed'
+          selected = jobs['wiring']['outputs']
+          for target, job in [('sdk', 'sdk-regressions'), ('macos', 'macos'),
+                              ('linux', 'linux'), ('windows', 'windows')]:
+              assert selected.get(target) in ('true', 'false'), f'Missing selection for {target}'
+              expected = 'success' if selected[target] == 'true' else 'skipped'
+              assert jobs[job]['result'] == expected, f'{job}: {jobs[job]["result"]}, expected {expected}'
+          PYTHON

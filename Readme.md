@@ -8,6 +8,34 @@ of the GNU General Public License, version 2 or later (GPLv2+).
 
 Please read the [FAQ](https://dolphin-emu.org/docs/faq/) before using Dolphin.
 
+## Switch2Kit quickstart (this fork)
+
+This fork adds an optional [Switch2Kit](https://github.com/jmonster/Switch2Kit)
+backend for native Bluetooth input from NSO GameCube, Nintendo Switch 2 Pro and
+individual Joy-Con 2 controllers. Start with the [setup and build guide](Docs/Switch2Kit.md).
+No separate dashboard, network bridge or system-wide SDL replacement is needed.
+
+* **Get a controller-enabled build:** follow the guide's
+  [development artifact instructions](Docs/Switch2Kit.md#applications-and-prerequisites)
+  or [build from source](Docs/Switch2Kit.md#build-from-source) with
+  `-DENABLE_SWITCH2KIT=ON`. The backend is **off by default**; the ordinary upstream
+  build instructions below do not enable it. Source builds use this fork's pinned
+  submodules and require SDL3, Qt and the documented Swift toolchain.
+* **Check the platform:** enabled builds require **macOS 15+** (Apple Silicon or
+  Intel). **Ubuntu 24.04 x86-64** and **Windows 11 x64** are experimental development
+  targets. These requirements apply to Switch2Kit-enabled builds; disabled builds
+  retain the upstream requirements below. Android is not supported by this backend.
+* **Connect and play:** in **Controllers > Switch 2 Controllers**, click
+  **Find Controllers**, allow Bluetooth access if prompted and hold the controller's
+  Sync button. Choose **GameCube (n)** or **Pro Controller (n)** in the physical-controller
+  dropdown beside a GameCube port, then verify the controls in **Configure**. Joy-Con
+  halves require manual mapping; see the guide for controller differences, rumble and
+  troubleshooting.
+
+Development artifacts are not production releases. A passing build or package-launch
+check does not establish Bluetooth/gameplay compatibility; see the
+[hardware qualification checklist](Docs/Switch2Kit.md#qualification-and-troubleshooting).
+
 ## System Requirements
 
 ### Desktop

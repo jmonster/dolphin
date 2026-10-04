@@ -13,9 +13,9 @@ In **Controllers**, find **Switch 2 Controllers**, click **Find Controllers**, a
 Bluetooth access and hold the controller's Sync button. Close other applications
 managing the same controller. A manual search lasts 60 seconds; use Find again to retry.
 
-Select **Switch2Kit GameCube** or **Switch2Kit Pro Controller 2** in the physical-device
-dropdown beside the desired GameCube port. This selects **Standard Controller** and
-applies the recommended buttons, sticks, triggers and rumble mapping. A device can be
+Select **GameCube (n)** or **Pro Controller (n)** in the physical-device dropdown
+beside the desired GameCube port, where **n** identifies the controller. This selects
+**Standard Controller** and applies the recommended buttons, sticks, triggers and rumble mapping. A device can be
 assigned to only one active Standard Controller port through this shortcut; set its
 old port to None before moving it. Verify the controls in **Configure**, then open a game.
 
@@ -76,8 +76,10 @@ An automated callback test is not a physical rumble test.
 
 ## Applications and prerequisites
 
-For development artifacts, open this repository's **Actions** tab and choose a successful
-run for the revision being tested. The workflows and application artifacts are:
+For development artifacts, open **Actions > Native Switch2Kit > Run workflow**, choose
+the revision and the `macos`, `linux` or `windows` target, then use the successful run's
+artifacts. PRs automatically qualify affected platforms but upload application archives
+only when explicitly requested. The workflows and application artifacts are:
 
 | Platform | Workflow | Artifact |
 | --- | --- | --- |
@@ -147,15 +149,21 @@ Disabled builds do not require Swift or raise the platform deployment target. En
 require SDL3, Qt and the platform toolchain below.
 
 **macOS:** use Xcode 26+ with Swift 6.2+, finish Xcode setup and select its Command Line Tools.
-On Apple Silicon, use a native Terminal and Homebrew rather than Rosetta.
+On Apple Silicon, use a native Terminal and Homebrew rather than Rosetta. Homebrew's
+split Qt components share its linked installation prefix; do not point CMake at the
+individual `qtbase` keg, which does not contain Qt Svg.
 
 ```sh
-brew install cmake ninja nasm automake libtool qt@6
+brew install cmake ninja nasm automake libtool qtbase qtsvg
+qt_prefix="$(brew --prefix)"
+test -f "$qt_prefix/lib/cmake/Qt6/Qt6Config.cmake"
+test -f "$qt_prefix/lib/cmake/Qt6Svg/Qt6SvgConfig.cmake"
 cmake -S . -B build-switch2kit -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
   -DENABLE_SWITCH2KIT=ON -DENABLE_SDL=ON -DENABLE_QT=ON \
-  -DUSE_SYSTEM_SDL3=OFF -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+  -DUSE_SYSTEM_SDL3=OFF -DCMAKE_PREFIX_PATH="$qt_prefix" \
+  -DQt6_DIR="$qt_prefix/lib/cmake/Qt6" \
   -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DPOSTPROCESS_BUNDLE=ON
 cmake --build build-switch2kit --target dolphin-emu --parallel 3
 open build-switch2kit/Binaries/DolphinQt.app
@@ -198,7 +206,9 @@ controller absent after a search, check adapter power/access, Sync mode, competi
 connections and the displayed status, then retry Find. Installing a dashboard or replacing
 system SDL is not a remedy.
 
-The workflows check builds and extracted-package launch using private test settings.
+See [testing and CI](Switch2KitCI.md) for the upstream unit-test baseline, focused CTest
+commands, automatic change selection and compiler caching. Selected native workflows
+check full builds and extracted-package launch using private test settings.
 They do not establish pristine first-use dialogs, downloaded-app approval, Bluetooth
 hardware or gameplay. Mapping and host regressions cover cancellation, backup/rollback,
 identity, saved consent, explicit stop and shutdown ordering; keep those checks when
